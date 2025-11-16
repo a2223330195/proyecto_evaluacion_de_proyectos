@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "flutter build windows",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"build",
+				"windows",
+				"-v"
+			],
+			"group": "build"
+		}
+	]
+}

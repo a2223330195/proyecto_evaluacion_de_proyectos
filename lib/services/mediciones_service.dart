@@ -2,6 +2,8 @@ import 'package:coachhub/services/db_connection.dart';
 import 'package:coachhub/models/medicion_model.dart';
 
 class MedicionesService {
+  static const int defaultPageSize = 20;
+
   final _db = DatabaseConnection.instance;
 
   Future<List<Medicion>> getMedicionesByAsesorado(int asesoradoId) async {
@@ -23,6 +25,46 @@ class MedicionesService {
     // results are DESC, return reversed to be ASC
     final list = results.map((r) => Medicion.fromMap(r.fields)).toList();
     return list.reversed.toList();
+  }
+
+  Future<List<Medicion>> getMedicionesByAsesoradoPaginated(
+    int asesoradoId, {
+    required int limit,
+    required int offset,
+  }) async {
+    const sql = '''
+      SELECT *
+      FROM (
+        SELECT *
+        FROM mediciones
+        WHERE asesorado_id = ?
+        ORDER BY fecha_medicion DESC
+        LIMIT ? OFFSET ?
+      ) AS ordered
+      ORDER BY fecha_medicion ASC
+    ''';
+
+    final results = await _db.query(sql, [asesoradoId, limit, offset]);
+    return results.map((r) => Medicion.fromMap(r.fields)).toList();
+  }
+
+  Future<int> countMediciones(int asesoradoId) async {
+    final results = await _db.query(
+      'SELECT COUNT(*) AS total FROM mediciones WHERE asesorado_id = ?',
+      [asesoradoId],
+    );
+    if (results.isEmpty) {
+      return 0;
+    }
+    final row = results.first;
+    final value = row['total'];
+    if (value is int) {
+      return value;
+    }
+    if (value is BigInt) {
+      return value.toInt();
+    }
+    return int.tryParse(value.toString()) ?? 0;
   }
 
   Future<void> createMedicion({

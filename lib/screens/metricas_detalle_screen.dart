@@ -56,11 +56,17 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
   MetricasBloc? _bloc;
   bool _ownsBloc = false;
 
+  // OPTIMIZACIÓN: Cache del widget de gráfica para evitar rebuilds innecesarios
+  Widget? _cachedChartWidget;
+  int? _lastChartSignature;
+
   @override
   void initState() {
     super.initState();
     // NEW: Initialize metrics service and load active metrics
     _metricasActivasService = MetricasActivasService();
+    // OPTIMIZACIÓN: Inicializar con defaults para evitar NULL en primer render
+    _metricasActivas = AsesoradoMetricasActivas.defaults(widget.asesoradoId);
     _loadMetricasActivas();
 
     if (!widget.isEmbedded) {
@@ -92,16 +98,10 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
     if (bloc == null) {
       return;
     }
-    final state = bloc.state;
-    final needsLoad =
-        state is! MedicionesDetallesCargados ||
-        state.rangeLimit != _rangeLimit ||
-        state.medicionesParaGrafico.isEmpty;
-    if (needsLoad) {
-      bloc.add(
-        LoadMedicionesDetalle(widget.asesoradoId, rangeLimit: _rangeLimit),
-      );
-    }
+    // Cargar datos en la primera llamada
+    bloc.add(
+      LoadMedicionesDetalle(widget.asesoradoId, rangeLimit: _rangeLimit),
+    );
     _initialLoadRequested = true;
   }
 
@@ -122,17 +122,13 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
       if (mounted) {
         setState(() {
           _metricasActivas = metricas;
+          // ✅ IMPORTANTE: Limpiar caches cuando cambian las métricas activas
+          _invalidateChartCache(clearTitles: true);
         });
       }
     } catch (e) {
-      // Fallback: create defaults if error
-      if (mounted) {
-        setState(() {
-          _metricasActivas = AsesoradoMetricasActivas.defaults(
-            widget.asesoradoId,
-          );
-        });
-      }
+      // Error silencioso: mantener los defaults ya inicializados en initState
+      // No hacer setState si falla, para evitar rebuild innecesario
     }
   }
 
@@ -158,9 +154,29 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
     if (bloc == null) {
       return;
     }
+    // ✅ Limpiar caches para que se recalcule la gráfica
+    _invalidateChartCache(clearTitles: true);
+
     bloc.add(
       LoadMedicionesDetalle(widget.asesoradoId, rangeLimit: _rangeLimit),
     );
+  }
+
+  void _loadMoreMediciones() {
+    final bloc = _metricasBloc;
+    if (bloc == null) {
+      return;
+    }
+    _invalidateChartCache(clearTitles: true);
+    bloc.add(const LoadMoreMediciones());
+  }
+
+  void _invalidateChartCache({bool clearTitles = false}) {
+    _cachedChartWidget = null;
+    _lastChartSignature = null;
+    if (clearTitles) {
+      _bottomTitleCache.clear();
+    }
   }
 
   void _onRangeChanged(int value) {
@@ -367,6 +383,7 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
                                                   metrica,
                                                 );
                                               }
+                                              _invalidateChartCache();
                                             });
                                           },
                                         ),
@@ -377,7 +394,7 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
                         ),
                         const SizedBox(height: 12),
                         // ===== GRÁFICA =====
-                        _buildMetricsChart(medicionesParaGrafico),
+                        _getCachedMetricsChart(medicionesParaGrafico),
                         const SizedBox(height: 12),
                         // ===== LEYENDA DE COLORES =====
                         _buildLegend(),
@@ -386,6 +403,34 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
                         Text('Últimas mediciones', style: AppStyles.titleStyle),
                         const SizedBox(height: 8),
                         _buildMedicionesList(medicionesParaLista),
+                        if (_rangeLimit == 0 && state.hasMore) ...[
+                          const SizedBox(height: 16),
+                          Center(
+                            child: FilledButton.icon(
+                              onPressed:
+                                  state.isLoading ? null : _loadMoreMediciones,
+                              icon:
+                                  state.isLoading
+                                      ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                      : const Icon(Icons.expand_more),
+                              label: Text(
+                                state.isLoading
+                                    ? 'Cargando más mediciones...'
+                                    : 'Cargar más mediciones',
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -397,6 +442,104 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
     );
   }
 
+  int _determineLabelCount(int medicionesCount) {
+    if (medicionesCount <= 0) {
+      return 0;
+    }
+    if (medicionesCount <= 3) {
+      return medicionesCount;
+    }
+    if (medicionesCount <= 5) {
+      return 3;
+    }
+    if (medicionesCount <= 10) {
+      return 4;
+    }
+    return 5;
+  }
+
+  double _calculateXAxisInterval(int medicionesCount) {
+    if (medicionesCount <= 1) {
+      return 1;
+    }
+
+    final labelCount = _determineLabelCount(medicionesCount);
+    if (labelCount <= 1) {
+      return 1;
+    }
+
+    final step = (medicionesCount - 1) / (labelCount - 1);
+    return step.clamp(1, double.maxFinite);
+  }
+
+  /// OPTIMIZACIÓN: Cachea el widget del gráfico para evitar rebuilds innecesarios
+  /// Si las mediciones no cambiaron, reutiliza el widget anterior
+  Widget _getCachedMetricsChart(List<Medicion> medicionesParaGrafico) {
+    final medicionesHash = Object.hashAll(
+      medicionesParaGrafico.map((m) => m.id),
+    );
+    final selectionIndices =
+        _metricasSeleccionadas.map((m) => m.index).toList()..sort();
+    final selectionSignature =
+        selectionIndices.isEmpty ? 0 : Object.hashAll(selectionIndices);
+    final cacheSignature = Object.hash(medicionesHash, selectionSignature);
+
+    if (_lastChartSignature == cacheSignature && _cachedChartWidget != null) {
+      return _cachedChartWidget!;
+    }
+
+    final newChart = _buildMetricsChart(medicionesParaGrafico);
+    _lastChartSignature = cacheSignature;
+    _cachedChartWidget = newChart;
+    return newChart;
+  }
+
+  final Map<int, Map<double, String>> _bottomTitleCache = {};
+
+  /// Pre-calcula las etiquetas del eje X para evitar cálculos en cada getTitlesWidget
+  Map<double, String> _getOrCacheBottomTitles(List<Medicion> mediciones) {
+    final medicionesHash = Object.hashAll(mediciones.map((m) => m.id));
+
+    // Si ya está cacheado, devolverlo
+    if (_bottomTitleCache.containsKey(medicionesHash)) {
+      return _bottomTitleCache[medicionesHash]!;
+    }
+
+    // Calcular una sola vez
+    final result = <double, String>{};
+
+    if (mediciones.isEmpty) {
+      _bottomTitleCache[medicionesHash] = result;
+      return result;
+    }
+
+    final labelCount = _determineLabelCount(mediciones.length);
+    if (labelCount == 0) {
+      _bottomTitleCache[medicionesHash] = result;
+      return result;
+    }
+
+    final indices = <int>{};
+    if (labelCount > 1 && mediciones.length > 1) {
+      final step = (mediciones.length - 1) / (labelCount - 1);
+      for (int i = 0; i < labelCount; i++) {
+        final index = (i * step).round().clamp(0, mediciones.length - 1);
+        indices.add(index);
+      }
+    } else if (labelCount == 1) {
+      indices.add(mediciones.length - 1);
+    }
+
+    for (final idx in indices) {
+      final x = idx.toDouble();
+      final label = DateFormat('dd/MM').format(mediciones[idx].fechaMedicion);
+      result[x] = label;
+    }
+
+    _bottomTitleCache[medicionesHash] = result;
+    return result;
+  }
+
   Widget _buildBottomTitle(
     double value,
     TitleMeta meta,
@@ -406,58 +549,25 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
       return const SizedBox.shrink();
     }
 
-    final points =
-        mediciones
-            .map(
-              (med) => (
-                medicion: med,
-                x: med.fechaMedicion.millisecondsSinceEpoch.toDouble(),
-              ),
-            )
-            .toList();
+    // Obtener etiquetas pre-cacheadas
+    final cachedTitles = _getOrCacheBottomTitles(mediciones);
+    final nearestIndex = value.round().toDouble();
+    final label = cachedTitles[nearestIndex];
 
-    int labelCount;
-    if (mediciones.length <= 3) {
-      labelCount = mediciones.length;
-    } else if (mediciones.length <= 7) {
-      labelCount = 4;
-    } else {
-      labelCount = 3;
+    if (label == null) {
+      return const SizedBox.shrink();
     }
 
-    final indices = <int>[];
-    if (labelCount > 1 && mediciones.length > 1) {
-      final step = (mediciones.length - 1) / (labelCount - 1);
-      for (int i = 0; i < labelCount; i++) {
-        final index = (i * step).round();
-        if (index < mediciones.length) {
-          indices.add(index);
-        }
-      }
-    } else if (labelCount == 1 && mediciones.isNotEmpty) {
-      indices.add(mediciones.length - 1);
-    }
-
-    for (int i = 0; i < points.length; i++) {
-      final medX = points[i].x;
-      if ((medX - value).abs() < 1e7 && indices.contains(i)) {
-        final label = DateFormat(
-          'dd/MM',
-        ).format(points[i].medicion.fechaMedicion);
-        return Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Transform.rotate(
-            angle: -0.4,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-            ),
-          ),
-        );
-      }
-    }
-
-    return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Transform.rotate(
+        angle: -1.57, // 90 grados para máxima legibilidad
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
+        ),
+      ),
+    );
   }
 
   // ===== MÉTODOS HELPER PARA CONSTRUIR WIDGETS =====
@@ -480,8 +590,19 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
       MetricaDisplayada.agua: Colors.cyan,
     };
 
-    // Helper para convertir fecha a double
-    double xForDate(DateTime d) => d.millisecondsSinceEpoch.toDouble();
+    final measurementDates =
+        medicionesParaGrafico.map((m) => m.fechaMedicion).toList();
+
+    List<FlSpot> buildSpots(double? Function(Medicion medicion) extractor) {
+      final spots = <FlSpot>[];
+      for (var index = 0; index < medicionesParaGrafico.length; index++) {
+        final value = extractor(medicionesParaGrafico[index]);
+        if (value != null) {
+          spots.add(FlSpot(index.toDouble(), value));
+        }
+      }
+      return spots;
+    }
 
     // Helper para verificar si métrica está activa
     bool isMetricaActive(MetricaKey metrica) =>
@@ -489,40 +610,21 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
 
     final pesoSpots =
         isMetricaActive(MetricaKey.peso)
-            ? medicionesParaGrafico
-                .where((m) => m.peso != null)
-                .map((m) => FlSpot(xForDate(m.fechaMedicion), m.peso!))
-                .toList()
+            ? buildSpots((m) => m.peso)
             : <FlSpot>[];
     final imcSpots =
-        isMetricaActive(MetricaKey.imc)
-            ? medicionesParaGrafico
-                .where((m) => m.imc != null)
-                .map((m) => FlSpot(xForDate(m.fechaMedicion), m.imc!))
-                .toList()
-            : <FlSpot>[];
+        isMetricaActive(MetricaKey.imc) ? buildSpots((m) => m.imc) : <FlSpot>[];
     final grasaSpots =
         isMetricaActive(MetricaKey.porcentajeGrasa)
-            ? medicionesParaGrafico
-                .where((m) => m.porcentajeGrasa != null)
-                .map(
-                  (m) => FlSpot(xForDate(m.fechaMedicion), m.porcentajeGrasa!),
-                )
-                .toList()
+            ? buildSpots((m) => m.porcentajeGrasa)
             : <FlSpot>[];
     final musculoSpots =
         isMetricaActive(MetricaKey.masaMuscular)
-            ? medicionesParaGrafico
-                .where((m) => m.masaMuscular != null)
-                .map((m) => FlSpot(xForDate(m.fechaMedicion), m.masaMuscular!))
-                .toList()
+            ? buildSpots((m) => m.masaMuscular)
             : <FlSpot>[];
     final aguaSpots =
         isMetricaActive(MetricaKey.aguaCorporal)
-            ? medicionesParaGrafico
-                .where((m) => m.aguaCorporal != null)
-                .map((m) => FlSpot(xForDate(m.fechaMedicion), m.aguaCorporal!))
-                .toList()
+            ? buildSpots((m) => m.aguaCorporal)
             : <FlSpot>[];
 
     metricsSpots = {
@@ -551,6 +653,12 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
       }).toList();
     }
 
+    final xInterval = _calculateXAxisInterval(medicionesParaGrafico.length);
+    final maxX =
+        medicionesParaGrafico.isEmpty
+            ? 0.0
+            : (medicionesParaGrafico.length - 1).toDouble();
+
     return SizedBox(
       height: 280,
       child: Card(
@@ -560,12 +668,16 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
           padding: const EdgeInsets.all(12),
           child: LineChart(
             LineChartData(
-              gridData: FlGridData(show: true),
+              gridData: FlGridData(show: true, verticalInterval: xInterval),
+              minX: 0,
+              maxX: maxX,
               titlesData: FlTitlesData(
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 60,
+                    // MEJORA: Intervalo dinámico para evitar solapamiento
+                    interval: xInterval,
                     getTitlesWidget:
                         (value, meta) => _buildBottomTitle(
                           value,
@@ -573,6 +685,9 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
                           medicionesParaGrafico,
                         ),
                   ),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
                 ),
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
@@ -585,6 +700,9 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
                         ),
                   ),
                 ),
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
               ),
               borderData: FlBorderData(show: true),
               lineBarsData: getLineChartBarsData(),
@@ -593,12 +711,13 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen>
                   getTooltipColor: (_) => Colors.blueGrey.shade700,
                   getTooltipItems: (spots) {
                     return spots.map((spot) {
-                      final date = DateTime.fromMillisecondsSinceEpoch(
-                        spot.x.toInt(),
-                      );
-                      final formattedDate = DateFormat(
-                        'dd/MM/yyyy',
-                      ).format(date);
+                      final index = spot.x.round();
+                      String formattedDate = '';
+                      if (index >= 0 && index < measurementDates.length) {
+                        formattedDate = DateFormat(
+                          'dd/MM/yyyy',
+                        ).format(measurementDates[index]);
+                      }
                       return LineTooltipItem(
                         '${spot.y.toStringAsFixed(1)}\n$formattedDate',
                         const TextStyle(color: Colors.white),

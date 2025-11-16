@@ -199,11 +199,24 @@ class PagosDetallesCargados extends PagosState {
   final double? costoPlan;
   final String? periodoSugerido;
   final double totalAbonadoPeriodo;
-  final List<PagoMembresia> pagos; // Historial de pagos
+  final List<PagoMembresia>
+  pagos; // Historial filtrado actual (por período seleccionado)
+  final List<PagoMembresia>
+  todosPagos; // 🎯 NUEVA: Historial COMPLETO (sin filtrar) para restauración
   final int currentPage;
   final int totalPages;
   final double totalAmount; // Total de pagos históricos
-  final bool ordenadoPorPeriodo; // true = por periodo, false = por fecha
+  final String?
+  feedbackMessage; // 🔧 Nuevo: mensaje de feedback para mostrar SnackBar
+  final List<String>
+  periodosDisponibles; // 🎯 NUEVA: Períodos disponibles para seleccionar (TODOS, no solo pendientes)
+  final String?
+  periodoSeleccionado; // 🎯 NUEVA: Período actualmente seleccionado (null = todos)
+  final String? ultimoPeriodoPagado; // Último período cubierto
+  final bool
+  puedePagarAnticipado; // Si puede pagar el siguiente período aunque no sea obligatorio
+  final bool
+  enVentanaCorte; // Si está dentro de la ventana de corte (mostrar alerta preventiva)
 
   const PagosDetallesCargados({
     required this.estado,
@@ -214,10 +227,16 @@ class PagosDetallesCargados extends PagosState {
     this.periodoSugerido,
     this.totalAbonadoPeriodo = 0.0,
     required this.pagos,
+    required this.todosPagos, // 🎯 NUEVA: parámetro requerido
     required this.currentPage,
     required this.totalPages,
     required this.totalAmount,
-    this.ordenadoPorPeriodo = false,
+    this.feedbackMessage,
+    this.periodosDisponibles = const [],
+    this.periodoSeleccionado,
+    this.ultimoPeriodoPagado,
+    this.puedePagarAnticipado = false,
+    this.enVentanaCorte = false,
   });
 
   /// Método copyWith para actualizaciones inmutables
@@ -230,10 +249,16 @@ class PagosDetallesCargados extends PagosState {
     String? periodoSugerido,
     double? totalAbonadoPeriodo,
     List<PagoMembresia>? pagos,
+    List<PagoMembresia>? todosPagos,
     int? currentPage,
     int? totalPages,
     double? totalAmount,
-    bool? ordenadoPorPeriodo,
+    String? feedbackMessage,
+    List<String>? periodosDisponibles,
+    String? periodoSeleccionado,
+    String? ultimoPeriodoPagado,
+    bool? puedePagarAnticipado,
+    bool? enVentanaCorte,
   }) {
     return PagosDetallesCargados(
       estado: estado ?? this.estado,
@@ -244,10 +269,16 @@ class PagosDetallesCargados extends PagosState {
       periodoSugerido: periodoSugerido ?? this.periodoSugerido,
       totalAbonadoPeriodo: totalAbonadoPeriodo ?? this.totalAbonadoPeriodo,
       pagos: pagos ?? this.pagos,
+      todosPagos: todosPagos ?? this.todosPagos,
       currentPage: currentPage ?? this.currentPage,
       totalPages: totalPages ?? this.totalPages,
       totalAmount: totalAmount ?? this.totalAmount,
-      ordenadoPorPeriodo: ordenadoPorPeriodo ?? this.ordenadoPorPeriodo,
+      feedbackMessage: feedbackMessage ?? this.feedbackMessage,
+      periodosDisponibles: periodosDisponibles ?? this.periodosDisponibles,
+      periodoSeleccionado: periodoSeleccionado ?? this.periodoSeleccionado,
+      ultimoPeriodoPagado: ultimoPeriodoPagado ?? this.ultimoPeriodoPagado,
+      puedePagarAnticipado: puedePagarAnticipado ?? this.puedePagarAnticipado,
+      enVentanaCorte: enVentanaCorte ?? this.enVentanaCorte,
     );
   }
 
@@ -261,9 +292,15 @@ class PagosDetallesCargados extends PagosState {
     periodoSugerido,
     totalAbonadoPeriodo,
     pagos,
+    todosPagos,
     currentPage,
     totalPages,
     totalAmount,
-    ordenadoPorPeriodo,
+    feedbackMessage,
+    periodosDisponibles,
+    periodoSeleccionado,
+    ultimoPeriodoPagado,
+    puedePagarAnticipado,
+    enVentanaCorte,
   ];
 }

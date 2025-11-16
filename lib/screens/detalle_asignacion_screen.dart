@@ -25,17 +25,84 @@ class DetalleAsignacionScreen extends StatefulWidget {
 class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
   final _rutinasService = EntrenamientoService();
   late Future<Map<String, dynamic>?> _detallesFuture;
+  Future<List<LogEjercicio>>? _logEjerciciosFuture;
+  final Map<int, Future<List<LogSerie>>> _seriesFutures = {};
   bool _isUpdating = false;
 
   @override
   void initState() {
     super.initState();
-    _detallesFuture = _rutinasService.getDetalleAsignacionConEjercicios(
+    _detallesFuture = _fetchDetalleAsignacion();
+    _logEjerciciosFuture = _fetchLogEjercicios();
+  }
+
+  Future<Map<String, dynamic>?> _fetchDetalleAsignacion() {
+    return _rutinasService.getDetalleAsignacionConEjercicios(
       widget.asignacionId,
     );
   }
 
-  Future<void> _updateStatus(String newStatus) async {
+  Future<List<LogEjercicio>> _fetchLogEjercicios() {
+    return _rutinasService.getLogEjerciciosDeAsignacion(widget.asignacionId);
+  }
+
+  Future<List<LogEjercicio>> _getLogEjerciciosFuture() {
+    _logEjerciciosFuture ??= _fetchLogEjercicios();
+    return _logEjerciciosFuture!;
+  }
+
+  Future<List<LogSerie>> _getSeriesFuture(int logEjercicioId) {
+    final cachedFuture = _seriesFutures[logEjercicioId];
+    if (cachedFuture != null) {
+      return cachedFuture;
+    }
+    final future = _rutinasService.getLogSeriesDeEjercicio(logEjercicioId);
+    _seriesFutures[logEjercicioId] = future;
+    return future;
+  }
+
+  void _refreshSeries(int logEjercicioId) {
+    _seriesFutures[logEjercicioId] = _rutinasService.getLogSeriesDeEjercicio(
+      logEjercicioId,
+    );
+  }
+
+  void _resetSeriesCache() {
+    _seriesFutures.clear();
+  }
+
+  void _refreshAssignmentData({bool refreshLogEjercicios = false}) {
+    _detallesFuture = _fetchDetalleAsignacion();
+    if (refreshLogEjercicios) {
+      _logEjerciciosFuture = _fetchLogEjercicios();
+      _resetSeriesCache();
+    }
+  }
+
+  Future<void> _updateStatus(String newStatus, String currentStatus) async {
+    final normalizedCurrent = currentStatus.toLowerCase();
+    final normalizedNew = newStatus.toLowerCase();
+
+    if (_isUpdating) return;
+
+    if (normalizedCurrent == normalizedNew) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Este estado ya está seleccionado'),
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.primary,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() => _isUpdating = true);
 
     final success = await _rutinasService.updateAsignacionStatus(
@@ -47,12 +114,9 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
 
     if (success && mounted) {
       setState(() {
-        _detallesFuture = _rutinasService.getDetalleAsignacionConEjercicios(
-          widget.asignacionId,
-        );
+        _refreshAssignmentData(refreshLogEjercicios: true);
       });
 
-      // ✅ Mostrar SnackBar con feedback mejorado
       final String statusText = _getStatusLabel(newStatus);
       final Color snackBarColor = _getStatusColor(newStatus);
       final IconData snackBarIcon = _getStatusIcon(newStatus);
@@ -87,10 +151,8 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
         );
       }
 
-      // ✅ Esperar un poco para que el usuario vea el feedback
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // ✅ Cerrar la pantalla y notificar a la anterior
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -100,7 +162,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
   void _showNotesDialog(Asignacion asignacion) {
     final controller = TextEditingController(text: asignacion.notes ?? '');
 
-    showDialog(
+    final dialogFuture = showDialog(
       context: context,
       builder:
           (_) => AlertDialog(
@@ -130,10 +192,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
                   if (success && mounted) {
                     Navigator.pop(context);
                     setState(() {
-                      _detallesFuture = _rutinasService
-                          .getDetalleAsignacionConEjercicios(
-                            widget.asignacionId,
-                          );
+                      _refreshAssignmentData();
                     });
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -151,6 +210,8 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
             ],
           ),
     );
+
+    dialogFuture.whenComplete(controller.dispose);
   }
 
   void _showFeedbackDialog(Asignacion asignacion) {
@@ -158,7 +219,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
       text: asignacion.feedbackAsesorado ?? '',
     );
 
-    showDialog(
+    final dialogFuture = showDialog(
       context: context,
       builder:
           (_) => AlertDialog(
@@ -189,10 +250,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
                   if (success && mounted) {
                     Navigator.pop(context);
                     setState(() {
-                      _detallesFuture = _rutinasService
-                          .getDetalleAsignacionConEjercicios(
-                            widget.asignacionId,
-                          );
+                      _refreshAssignmentData();
                     });
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -210,6 +268,8 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
             ],
           ),
     );
+
+    dialogFuture.whenComplete(controller.dispose);
   }
 
   @override
@@ -270,7 +330,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
               const SizedBox(height: 24),
 
               // LISTA DE EJERCICIOS CON LOGGING (FASE J)
-              _buildEjerciciosLoggingSection(),
+              _buildEjerciciosLoggingSection(asignacion),
               const SizedBox(height: 24),
 
               // BOTONES DE ACCIÓN
@@ -393,7 +453,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Rutina: ${asignacion.rutinaNombre}',
+                      'Rutina: ${asignacion.rutinaNombre ?? "Sin rutina definida"}',
                       style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                     ),
                   ],
@@ -551,17 +611,28 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
   }
 
   /// FASE J: Nueva sección que carga y muestra LogEjercicio con logging interactivo
-  Widget _buildEjerciciosLoggingSection() {
+  Widget _buildEjerciciosLoggingSection(Asignacion asignacion) {
     return FutureBuilder<List<LogEjercicio>>(
-      future: _rutinasService.getLogEjerciciosDeAsignacion(widget.asignacionId),
+      future: _getLogEjerciciosFuture(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                'Error cargando ejercicios planificados',
+                style: TextStyle(color: Colors.red.shade400),
+              ),
+            ),
+          );
+        }
+
         final logEjercicios = snapshot.data ?? [];
 
-        // Si hay LogEjercicios (FASE J), mostrarlos
         if (logEjercicios.isNotEmpty) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -586,72 +657,72 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
           );
         }
 
-        // Fallback: Mostrar ejercicios de la plantilla original para asignaciones antiguas
-        return FutureBuilder<Map<String, dynamic>?>(
-          future: _detallesFuture,
-          builder: (context, detallesSnapshot) {
-            if (detallesSnapshot.connectionState == ConnectionState.waiting) {
+        final plantillaId = asignacion.plantillaId;
+        if (plantillaId <= 0) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                'Asignación sin plantilla asociada',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+          );
+        }
+
+        return FutureBuilder<List<Ejercicio>>(
+          future: _rutinasService.getEjerciciosDePlantilla(plantillaId),
+          builder: (context, ejerciciosSnapshot) {
+            if (ejerciciosSnapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final asignacion =
-                detallesSnapshot.data?['asignacion'] as Asignacion?;
-            if (asignacion == null) {
+            if (ejerciciosSnapshot.hasError) {
               return Center(
-                child: Text(
-                  'No hay ejercicios registrados',
-                  style: TextStyle(color: Colors.grey[600]),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'Error cargando ejercicios de la plantilla',
+                    style: TextStyle(color: Colors.red.shade400),
+                  ),
                 ),
               );
             }
 
-            // Cargar ejercicios de la plantilla
-            return FutureBuilder<List<Ejercicio>>(
-              future: _rutinasService.getEjerciciosDePlantilla(
-                asignacion.plantillaId,
-              ),
-              builder: (context, ejerciciosSnapshot) {
-                if (ejerciciosSnapshot.connectionState ==
-                    ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            final ejercicios = ejerciciosSnapshot.data ?? [];
 
-                final ejercicios = ejerciciosSnapshot.data ?? [];
+            if (ejercicios.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'No hay ejercicios registrados para esta asignación',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ),
+              );
+            }
 
-                if (ejercicios.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 24),
-                      child: Text(
-                        'No hay ejercicios registrados para esta asignación',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                    ),
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Ejercicios Planificados',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: ejercicios.length,
-                      itemBuilder: (context, index) {
-                        final ejercicio = ejercicios[index];
-                        return _buildEjercicioCardLegacy(ejercicio, index + 1);
-                      },
-                    ),
-                  ],
-                );
-              },
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Ejercicios Planificados',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: ejercicios.length,
+                  itemBuilder: (context, index) {
+                    final ejercicio = ejercicios[index];
+                    return _buildEjercicioCardLegacy(ejercicio, index + 1);
+                  },
+                ),
+              ],
             );
           },
         );
@@ -850,8 +921,54 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
   /// FASE J: Muestra todas las series registradas para un LogEjercicio
   Widget _buildSeriesLoggedSection(int logEjercicioId) {
     return FutureBuilder<List<LogSerie>>(
-      future: _rutinasService.getLogSeriesDeEjercicio(logEjercicioId),
+      future: _getSeriesFuture(logEjercicioId),
       builder: (context, snapshot) {
+        final connection = snapshot.connectionState;
+        if (connection == ConnectionState.waiting ||
+            connection == ConnectionState.active) {
+          return Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Cargando series...',
+                  style: TextStyle(color: Colors.grey[700], fontSize: 12),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Text(
+              'No se pudieron cargar las series',
+              style: TextStyle(color: Colors.red.shade400, fontSize: 12),
+            ),
+          );
+        }
+
         final series = snapshot.data ?? [];
 
         if (series.isEmpty) {
@@ -912,7 +1029,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
     final cargaController = TextEditingController();
     final notasController = TextEditingController();
 
-    showDialog(
+    final dialogFuture = showDialog(
       context: context,
       builder:
           (_) => AlertDialog(
@@ -926,7 +1043,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       labelText: 'Repeticiones Completadas',
-                      hintText: 'Ej: 8, 10, 12',
+                      hintText: 'Ej: 8, 10, 12 (1-100)',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -940,7 +1057,7 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
                     ),
                     decoration: InputDecoration(
                       labelText: 'Carga (kg)',
-                      hintText: 'Ej: 50, 50.5, opcional',
+                      hintText: 'Ej: 50, 50.5, opcional (0-500kg)',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -967,25 +1084,44 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
               ),
               ElevatedButton(
                 onPressed: () async {
+                  // ✅ MEJORA 3: Validar reps en rango 1-100
                   final reps = int.tryParse(repsController.text);
-                  if (reps == null || reps <= 0) {
+                  if (reps == null || reps <= 0 || reps > 100) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Ingresa un número válido de reps'),
+                        content: Text(
+                          '❌ Ingresa un número válido de reps (1-100)',
+                        ),
+                        backgroundColor: Colors.red,
                       ),
                     );
                     return;
                   }
 
-                  final carga = double.tryParse(cargaController.text);
+                  // ✅ MEJORA 3: Validar carga en rango 0-500 kg
+                  double? carga;
+                  if (cargaController.text.isNotEmpty) {
+                    carga = double.tryParse(cargaController.text);
+                    if (carga == null || carga < 0 || carga > 500) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('❌ Carga debe estar entre 0-500 kg'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                  }
+
                   final notas =
                       notasController.text.isNotEmpty
                           ? notasController.text
                           : null;
 
                   // Obtener número de serie (count + 1)
-                  final seriesExistentes = await _rutinasService
-                      .getLogSeriesDeEjercicio(logEjercicioId);
+                  final seriesExistentes = await _getSeriesFuture(
+                    logEjercicioId,
+                  );
                   final numSerie = seriesExistentes.length + 1;
 
                   final serieId = await _rutinasService.registrarSerie(
@@ -999,14 +1135,11 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
                   if (serieId > 0 && mounted) {
                     Navigator.pop(context);
                     setState(() {
-                      _detallesFuture = _rutinasService
-                          .getDetalleAsignacionConEjercicios(
-                            widget.asignacionId,
-                          );
+                      _refreshSeries(logEjercicioId);
                     });
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Serie registrada'),
+                        content: Text('✅ Serie registrada'),
                         backgroundColor: AppColors.success,
                       ),
                     );
@@ -1020,6 +1153,12 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
             ],
           ),
     );
+
+    dialogFuture.whenComplete(() {
+      repsController.dispose();
+      cargaController.dispose();
+      notasController.dispose();
+    });
   }
 
   Widget _buildDetailChip({
@@ -1040,6 +1179,46 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
     );
   }
 
+  ButtonStyle _statusButtonStyle({
+    required bool isActive,
+    required Color activeColor,
+  }) {
+    return ButtonStyle(
+      padding: WidgetStateProperty.all(
+        const EdgeInsets.symmetric(vertical: 14),
+      ),
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return isActive
+              ? activeColor.withValues(alpha: 0.8)
+              : Colors.grey.shade200;
+        }
+        return isActive ? activeColor : Colors.white;
+      }),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return isActive ? Colors.white : AppColors.textSecondary;
+        }
+        return isActive ? Colors.white : AppColors.textPrimary;
+      }),
+      overlayColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.pressed)) {
+          return activeColor.withValues(alpha: 0.12);
+        }
+        return null;
+      }),
+      elevation: WidgetStateProperty.resolveWith((states) => isActive ? 4 : 0),
+      shadowColor: WidgetStateProperty.all(activeColor.withValues(alpha: 0.35)),
+      side: WidgetStateProperty.resolveWith(
+        (states) =>
+            BorderSide(color: isActive ? activeColor : AppColors.border),
+      ),
+      textStyle: WidgetStateProperty.all(
+        const TextStyle(fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
   Widget _buildActionButtons(Asignacion asignacion) {
     final isCompletado = asignacion.status.toLowerCase() == 'completada';
     final isPendiente = asignacion.status.toLowerCase() == 'pendiente';
@@ -1054,19 +1233,17 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
             Expanded(
               child: ElevatedButton.icon(
                 onPressed:
-                    (isCompletado || _isUpdating)
+                    _isUpdating
                         ? null
-                        : () => _updateStatus('completada'),
+                        : () => _updateStatus('completada', asignacion.status),
                 icon:
                     isCompletado
                         ? const Icon(Icons.check_circle)
                         : const Icon(Icons.check_circle_outline),
                 label: const Text('Completado'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      isCompletado ? AppColors.success : Colors.grey[400],
-                  foregroundColor: Colors.white,
-                  elevation: isCompletado ? 4 : 0,
+                style: _statusButtonStyle(
+                  isActive: isCompletado,
+                  activeColor: AppColors.success,
                 ),
               ),
             ),
@@ -1076,19 +1253,17 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
             Expanded(
               child: ElevatedButton.icon(
                 onPressed:
-                    (isPendiente || _isUpdating)
+                    _isUpdating
                         ? null
-                        : () => _updateStatus('pendiente'),
+                        : () => _updateStatus('pendiente', asignacion.status),
                 icon:
                     isPendiente
                         ? const Icon(Icons.schedule)
                         : const Icon(Icons.schedule_outlined),
                 label: const Text('Pendiente'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      isPendiente ? Colors.orange : Colors.grey[400],
-                  foregroundColor: Colors.white,
-                  elevation: isPendiente ? 4 : 0,
+                style: _statusButtonStyle(
+                  isActive: isPendiente,
+                  activeColor: Colors.orange,
                 ),
               ),
             ),
@@ -1098,22 +1273,33 @@ class _DetalleAsignacionScreenState extends State<DetalleAsignacionScreen> {
             Expanded(
               child: ElevatedButton.icon(
                 onPressed:
-                    (isCancelado || _isUpdating)
+                    _isUpdating
                         ? null
-                        : () => _updateStatus('cancelada'),
+                        : () => _updateStatus('cancelada', asignacion.status),
                 icon:
                     isCancelado
                         ? const Icon(Icons.cancel)
                         : const Icon(Icons.cancel_outlined),
                 label: const Text('Cancelar'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isCancelado ? Colors.red : Colors.grey[400],
-                  foregroundColor: Colors.white,
-                  elevation: isCancelado ? 4 : 0,
+                style: _statusButtonStyle(
+                  isActive: isCancelado,
+                  activeColor: Colors.red,
                 ),
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Estado actual: ${_getStatusLabel(asignacion.status)}',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+          ),
         ),
         const SizedBox(height: 12),
 

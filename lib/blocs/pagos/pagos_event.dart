@@ -108,26 +108,46 @@ class ObtenerEstadoPago extends PagosEvent {
 /// Evento: Cargar detalles completos de pagos para una ficha de asesorado
 class LoadPagosDetails extends PagosEvent {
   final int asesoradoId;
+  final String? feedbackMessage; // 🔧 Nuevo: mensaje a propagar en el estado
 
-  const LoadPagosDetails(this.asesoradoId);
+  const LoadPagosDetails(this.asesoradoId, {this.feedbackMessage});
 
   @override
-  List<Object> get props => [asesoradoId];
+  List<Object?> get props => [asesoradoId, feedbackMessage];
 }
 
-/// Evento: Cambiar criterio de ordenamiento (por fecha o por periodo)
-class OrdenarPagosPorPeriodo extends PagosEvent {
+/// 🎯 NUEVA FUNCIONALIDAD: Filtrar pagos por período seleccionado
+class FiltrarPagosPorPeriodo extends PagosEvent {
   final int asesoradoId;
-  final bool porPeriodo; // true = orden por periodo, false = orden por fecha
+  final String?
+  periodoSeleccionado; // null = mostrar todos, '2025-01' = mostrar solo ese período
 
-  const OrdenarPagosPorPeriodo(this.asesoradoId, this.porPeriodo);
+  const FiltrarPagosPorPeriodo(this.asesoradoId, this.periodoSeleccionado);
 
   @override
-  List<Object> get props => [asesoradoId, porPeriodo];
+  List<Object?> get props => [asesoradoId, periodoSeleccionado];
 }
 
 /// 🛡️ MÓDULO 5 FASE 5.6: Cargar más pagos (infinite scroll)
 /// Append mode: agrega items a la lista existente
 class LoadMorePagos extends PagosEvent {
   const LoadMorePagos();
+}
+
+/// 🎯 NUEVA: Pago por adelantado (próximo período disponible)
+class PagarPorAdelantado extends PagosEvent {
+  final int asesoradoId;
+  final double monto; // costoPlan del siguiente período
+  final String periodoObjetivo;
+  final String? nota;
+
+  const PagarPorAdelantado(
+    this.asesoradoId,
+    this.monto,
+    this.periodoObjetivo,
+    this.nota,
+  );
+
+  @override
+  List<Object?> get props => [asesoradoId, monto, periodoObjetivo, nota];
 }

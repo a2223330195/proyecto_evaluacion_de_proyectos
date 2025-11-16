@@ -15,11 +15,11 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
   int _currentPage = 1;
   int _totalPages = 1;
   String? _searchQuery;
-  bool _ordenadoPorPeriodo = false; // Rastrear criterio de ordenamiento
 
   // 🚀 OPTIMIZACIÓN 1: Event Deduplication - Evitar eventos duplicados en <200ms
   DateTime? _lastLoadPagosTime;
   final Duration _deduplicationWindow = const Duration(milliseconds: 200);
+  _LoadPagosSignature? _lastLoadPagosSignature;
 
   // 🚀 OPTIMIZACIÓN 2: Cache granular por asesorado
   final Map<int, DateTime> _cacheTimestamps = {}; // asesoradoId -> timestamp
@@ -36,8 +36,13 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
     on<CompletarPago>(_onCompletarPago);
     on<ObtenerEstadoPago>(_onObtenerEstadoPago);
     on<LoadPagosDetails>(_onLoadPagosDetails);
-    on<OrdenarPagosPorPeriodo>(_onOrdenarPagosPorPeriodo);
     on<LoadMorePagos>(_onLoadMorePagos); // 🛡️ MÓDULO 5 FASE 5.6
+    on<FiltrarPagosPorPeriodo>(
+      _onFiltrarPagosPorPeriodo,
+    ); // 🎯 NUEVA: Filtrar por período
+    on<PagarPorAdelantado>(
+      _onPagarPorAdelantado,
+    ); // 🎯 NUEVA: Pago por adelantado
   }
 
   /// Manejador: Cargar pagos paginados
@@ -45,9 +50,17 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
   Future<void> _onLoadPagos(LoadPagos event, Emitter<PagosState> emit) async {
     // 🚀 OPTIMIZACIÓN 1: Event Deduplication
     final now = DateTime.now();
+    final signature = _LoadPagosSignature(
+      asesoradoId: event.asesoradoId,
+      pageNumber: event.pageNumber,
+      searchQuery: event.searchQuery,
+    );
+
     if (_lastLoadPagosTime != null &&
+        _lastLoadPagosSignature == signature &&
         now.difference(_lastLoadPagosTime!).inMilliseconds <
             _deduplicationWindow.inMilliseconds) {
+      _lastLoadPagosTime = now;
       if (kDebugMode) {
         debugPrint(
           '[PagosBloc] Evento LoadPagos deduplicado (demasiado pronto)',
@@ -56,6 +69,7 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
       return; // Ignorar evento duplicado
     }
     _lastLoadPagosTime = now;
+    _lastLoadPagosSignature = signature;
 
     emit(const PagosLoading());
     try {
@@ -304,13 +318,15 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
     }
   }
 
-  /// Manejador: Registrar abono parcial (NUEVO)
+  /// Manejador: Registrar abono parcial (NUEVO - DEPRECADO, usar CompletarPago)
+  /// ⚠️ DEPRECADO: Este evento sigue existiendo por compatibilidad, pero usa registrarPago()
   Future<void> _onRecordarAbono(
     RecordarAbono event,
     Emitter<PagosState> emit,
   ) async {
     try {
-      final resultado = await _service.registrarAbono(
+      // ✅ Usar método unificado registrarPago()
+      final resultado = await _service.registrarPago(
         asesoradoId: event.asesoradoId,
         monto: event.monto,
         nota: event.nota,
@@ -322,20 +338,59 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
         );
       }
 
-      emit(
-        AbonoRegistrado(
-          saldoPendiente: (resultado['saldo_pendiente'] as double?) ?? 0.0,
-          totalAbonado: (resultado['total_abonado'] as double?) ?? event.monto,
-          periodo: (resultado['periodo'] as String?) ?? 'N/A',
-        ),
-      );
+      final periodoCompletado =
+          (resultado['periodo_completado'] as bool?) ?? false;
+      final saldoPendiente = (resultado['saldo_pendiente'] as double?) ?? 0.0;
 
-      // 🚀 OPTIMIZACIÓN 4: Partial state update
-      // En lugar de recargar todo (lista + totales + estado)
-      // Solo recargar detalles (estado + saldo) y parallelizar con lista
-      // Esto es más rápido que LoadPagosDetails
+      // 🎯 FIX: En lugar de recargar el estado del siguiente período,
+      // emitir manualmente el estado actual con saldo pendiente = \$0.00
+      if (periodoCompletado) {
+        // ✅ Período completamente pagado
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosBloc] Período ${resultado['periodo']} completado. Mostrando saldo \$0.00',
+          );
+        }
+
+        emit(
+          AbonoRegistrado(
+            saldoPendiente: 0.0,
+            totalAbonado:
+                (resultado['total_abonado'] as double?) ?? event.monto,
+            periodo: resultado['periodo'] as String,
+          ),
+        );
+        add(
+          LoadPagosDetails(
+            event.asesoradoId,
+            feedbackMessage: 'Abono registrado y saldo del período cubierto.',
+          ),
+        );
+      } else {
+        // ⚠️ Aún hay saldo pendiente
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosBloc] Abono registrado. Saldo pendiente: \$${saldoPendiente.toStringAsFixed(2)}',
+          );
+        }
+
+        emit(
+          AbonoRegistrado(
+            saldoPendiente: saldoPendiente,
+            totalAbonado:
+                (resultado['total_abonado'] as double?) ?? event.monto,
+            periodo: resultado['periodo'] as String,
+          ),
+        );
+        add(
+          LoadPagosDetails(
+            event.asesoradoId,
+            feedbackMessage: 'Abono registrado correctamente.',
+          ),
+        );
+      }
+
       _invalidateCache(event.asesoradoId);
-      add(LoadPagosDetails(event.asesoradoId));
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[PagosBloc] Error registrando abono: $e');
@@ -344,13 +399,15 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
     }
   }
 
-  /// Manejador: Completar pago (NUEVO)
+  /// Manejador: Completar pago (NUEVO - unificado con registrarAbono)
+  /// ✅ MEJORA: Usa método unificado registrarPago() que determina tipo POST-inserción
   Future<void> _onCompletarPago(
     CompletarPago event,
     Emitter<PagosState> emit,
   ) async {
     try {
-      final resultado = await _service.completarPago(
+      // ✅ Usar método unificado registrarPago()
+      final resultado = await _service.registrarPago(
         asesoradoId: event.asesoradoId,
         monto: event.monto,
         nota: event.nota,
@@ -358,37 +415,64 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
 
       if (kDebugMode) {
         debugPrint(
-          "[PagosBloc] Pago completado: ${event.monto} para período ${resultado['periodo']}",
+          "[PagosBloc] Pago registrado: ${event.monto} para período ${resultado['periodo']}, tipo: ${resultado['tipo_pago']}",
         );
       }
 
       // 🎯 TAREA 1.3: Verificar y aplicar estado de abono
-      String feedbackMessage = 'Pago completado exitosamente ✓';
-      final estadoCambio = await _service.verificarYAplicarEstadoAbono(
+      // ⚠️ No causa extensión duplicada gracias a cambio en verificarYAplicarEstadoAbono
+      await _service.verificarYAplicarEstadoAbono(
         asesoradoId: event.asesoradoId,
         periodo: resultado['periodo'] as String,
       );
 
-      if (estadoCambio) {
-        feedbackMessage =
-            'Pago completado ✓ Membresía extendida automáticamente';
+      // 🎯 Extraer el flag periodo_completado para determinar si es pago completo o abono
+      final periodoCompletado =
+          (resultado['periodo_completado'] as bool?) ?? false;
+      final saldoPendiente = (resultado['saldo_pendiente'] as double?) ?? 0.0;
+      final periodo = resultado['periodo'] as String;
+      final totalAbonado =
+          (resultado['total_abonado'] as double?) ?? event.monto;
+
+      // 🎯 FIX: NO llamar a add(LoadPagosDetails(...)) para evitar recargar el siguiente período
+      // En su lugar, emitir manualmente el estado con saldo $0.00 si período se completó
+      if (periodoCompletado) {
+        // ✅ Período completamente pagado → mostrar saldo $0.00
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosBloc] Período $periodo completamente pagado. Membresía extendida. Mostrando saldo \$0.00',
+          );
+        }
+
+        emit(PagoCompletado(periodo: periodo, montoTotal: event.monto));
+        add(
+          LoadPagosDetails(
+            event.asesoradoId,
+            feedbackMessage: 'Pago completado y membresía actualizada.',
+          ),
+        );
+      } else {
+        // ⚠️ Aún hay saldo pendiente → emitir AbonoRegistrado
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosBloc] Abono registrado, pero período aún no completado. Saldo: \$${saldoPendiente.toStringAsFixed(2)}',
+          );
+        }
+
+        emit(
+          AbonoRegistrado(
+            saldoPendiente: saldoPendiente,
+            totalAbonado: totalAbonado,
+            periodo: periodo,
+          ),
+        );
+        add(
+          LoadPagosDetails(
+            event.asesoradoId,
+            feedbackMessage: 'Pago parcial registrado.',
+          ),
+        );
       }
-
-      // 🎯 TAREA 1.2: Recargar pagos con feedbackMessage
-      final pagos = await _service.getPagosByAsesorado(event.asesoradoId);
-
-      emit(
-        PagosLoaded(
-          pagos: pagos,
-          currentPage: 1,
-          totalPages: 1,
-          totalAmount: pagos.fold<double>(0, (sum, p) => sum + p.monto),
-          feedbackMessage: feedbackMessage, // ← FEEDBACK CON LÓGICA 1.3
-        ),
-      );
-
-      // ✨ Recargar detalles completos (estado + historial) en lugar de solo lista
-      add(LoadPagosDetails(event.asesoradoId));
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[PagosBloc] Error completando pago: $e');
@@ -443,46 +527,86 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
         );
       }
 
-      // 🚀 OPTIMIZACIÓN 3: Parallelizar 4 queries en lugar de en serie
-      // Antes: 4 queries × 100ms = 400ms
-      // Ahora: 4 queries en paralelo = 100ms (3x más rápido)
+      // 🚀 OPTIMIZACIÓN 3: Paralelizar queries y evitar duplicados
+      // 🎯 Cargar historial completo una sola vez para reutilizarlo en filtros
       final futures = [
         _service.obtenerEstadoPago(event.asesoradoId),
-        _service.getPagosByAsesoradoPaginated(
-          asesoradoId: event.asesoradoId,
-          pageNumber: 1,
-        ),
-        _service.getPagosCount(event.asesoradoId),
+        _service.getPagosCompletos(asesoradoId: event.asesoradoId),
         _service.getPagosTotalAmount(event.asesoradoId),
+        _service.obtenerTodosPeriodos(event.asesoradoId),
       ];
 
       final results = await Future.wait(futures);
       final estadoData = results[0] as Map<String, dynamic>;
-      final pagos = results[1] as List<PagoMembresia>;
-      final totalCount = results[2] as int;
-      final totalAmount = results[3] as double;
+      final pagosCompletos = results[1] as List<PagoMembresia>;
+      final totalAmount = results[2] as double;
+      final periodosDisponibles = results[3] as List<String>;
 
-      _totalPages = totalCount == 0 ? 1 : (totalCount / 10).ceil();
+      // 📊 VALIDACIÓN: Advertencia si el historial es muy grande (riesgo de memoria)
+      if (pagosCompletos.length > 500) {
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosBloc] ⚠️ ADVERTENCIA: Historial muy grande (${pagosCompletos.length} registros). Considerar pagination en getPagosCompletos()',
+          );
+        }
+      } else if (kDebugMode) {
+        debugPrint(
+          '[PagosBloc] Historial cargado: ${pagosCompletos.length} registros en memoria',
+        );
+      }
+
+      final totalCount = pagosCompletos.length;
+      _totalPages =
+          totalCount == 0
+              ? 1
+              : (totalCount / PagosService.defaultPageSize).ceil();
 
       // 🚀 OPTIMIZACIÓN 2: Actualizar cache timestamp
       _cacheTimestamps[event.asesoradoId] = DateTime.now();
 
+      String estado =
+          (estadoData['estado'] as String?)?.toLowerCase() ?? 'desconocido';
+      double saldoPendiente = (estadoData['saldo_pendiente'] as double?) ?? 0.0;
+      final DateTime? fechaVencimiento =
+          estadoData['fecha_vencimiento'] as DateTime?;
+
+      if (saldoPendiente <= 0.0001) {
+        saldoPendiente = 0.0;
+        if (estado != 'pagado') {
+          estado = 'pagado';
+        }
+      }
+      estadoData['estado'] = estado;
+      estadoData['saldo_pendiente'] = saldoPendiente;
+
+      final bool puedePagarAnticipado =
+          (estadoData['puede_pagar_anticipado'] as bool?) ?? false;
+      final bool enVentanaCorte =
+          (estadoData['en_ventana_corte'] as bool?) ?? false;
+      final String? ultimoPeriodoPagado =
+          estadoData['ultimo_periodo_pagado'] as String?;
+
       // 3. Emitir estado con todo integrado
       emit(
         PagosDetallesCargados(
-          estado: estadoData['estado'] as String,
-          saldoPendiente: (estadoData['saldo_pendiente'] as double?) ?? 0.0,
-          fechaVencimiento: estadoData['fecha_vencimiento'] as DateTime?,
+          estado: estado,
+          saldoPendiente: saldoPendiente,
+          fechaVencimiento: fechaVencimiento,
           planNombre: estadoData['plan_nombre'] as String?,
           costoPlan: estadoData['costo_plan'] as double?,
           periodoSugerido: estadoData['periodo_a_pagar'] as String?,
           totalAbonadoPeriodo:
               estadoData['total_abonado_periodo'] as double? ?? 0.0,
-          pagos: pagos,
+          pagos: pagosCompletos,
+          todosPagos: pagosCompletos, // 🎯 CORREGIDO: usar historial completo
           currentPage: 1,
           totalPages: _totalPages,
           totalAmount: totalAmount,
-          ordenadoPorPeriodo: _ordenadoPorPeriodo,
+          feedbackMessage: event.feedbackMessage,
+          periodosDisponibles: periodosDisponibles,
+          ultimoPeriodoPagado: ultimoPeriodoPagado,
+          puedePagarAnticipado: puedePagarAnticipado,
+          enVentanaCorte: enVentanaCorte,
         ),
       );
     } catch (e) {
@@ -494,59 +618,54 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
   }
 
   /// Manejador: Cambiar criterio de ordenamiento (por periodo o por fecha)
-  Future<void> _onOrdenarPagosPorPeriodo(
-    OrdenarPagosPorPeriodo event,
+  /// 🎯 NUEVA FUNCIONALIDAD: Filtrar pagos por período seleccionado
+  /// Si periodoSeleccionado es null, muestra todos los pagos
+  /// Si periodoSeleccionado tiene valor (ej: '2025-01'), filtra solo ese período
+  /// 🎯 CORREGIDO: Usa todosPagos (colección completa) para filtrado sin truncamiento
+  Future<void> _onFiltrarPagosPorPeriodo(
+    FiltrarPagosPorPeriodo event,
     Emitter<PagosState> emit,
   ) async {
     try {
-      _ordenadoPorPeriodo = event.porPeriodo;
-      _currentAsesoradoId = event.asesoradoId;
-      _currentPage = 1;
+      if (state is! PagosDetallesCargados) return;
+      final currentState = state as PagosDetallesCargados;
 
-      // 1. Cargar estado de pago (igual que antes)
-      final estadoData = await _service.obtenerEstadoPago(event.asesoradoId);
+      // 🎯 CORREGIDO: Filtrar desde todosPagos (colección completa) no desde pagos (truncada)
+      List<PagoMembresia> pagosFiltrados = currentState.todosPagos;
 
-      if (kDebugMode) {
-        debugPrint(
-          '[PagosBloc] Ordenando pagos ${event.porPeriodo ? "por periodo" : "por fecha"}',
-        );
+      if (event.periodoSeleccionado != null &&
+          event.periodoSeleccionado!.isNotEmpty) {
+        pagosFiltrados =
+            currentState.todosPagos
+                .where((pago) => pago.periodo == event.periodoSeleccionado)
+                .toList();
+
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosBloc] Filtrando pagos por período: ${event.periodoSeleccionado} '
+            '(${pagosFiltrados.length} resultados de ${currentState.todosPagos.length} totales)',
+          );
+        }
+      } else {
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosBloc] Mostrando todos los pagos (${currentState.todosPagos.length} totales)',
+          );
+        }
       }
 
-      // 2. Cargar historial con nuevo ordenamiento
-      final pagos = await _service.getPagosByAsesoradoPaginated(
-        asesoradoId: event.asesoradoId,
-        pageNumber: 1,
-        ordenarPorPeriodo: event.porPeriodo,
-      );
-
-      final totalCount = await _service.getPagosCount(event.asesoradoId);
-      _totalPages = totalCount == 0 ? 1 : (totalCount / 10).ceil();
-
-      final totalAmount = await _service.getPagosTotalAmount(event.asesoradoId);
-
-      // 3. Emitir estado actualizado con nuevo ordenamiento
+      // Emitir estado actualizado con período seleccionado
       emit(
-        PagosDetallesCargados(
-          estado: estadoData['estado'] as String,
-          saldoPendiente: (estadoData['saldo_pendiente'] as double?) ?? 0.0,
-          fechaVencimiento: estadoData['fecha_vencimiento'] as DateTime?,
-          planNombre: estadoData['plan_nombre'] as String?,
-          costoPlan: estadoData['costo_plan'] as double?,
-          periodoSugerido: estadoData['periodo_a_pagar'] as String?,
-          totalAbonadoPeriodo:
-              estadoData['total_abonado_periodo'] as double? ?? 0.0,
-          pagos: pagos,
-          currentPage: 1,
-          totalPages: _totalPages,
-          totalAmount: totalAmount,
-          ordenadoPorPeriodo: event.porPeriodo,
+        currentState.copyWith(
+          pagos: pagosFiltrados, // Campo filtrado para mostrar en UI
+          periodoSeleccionado: event.periodoSeleccionado,
         ),
       );
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[PagosBloc] Error cambiando ordenamiento: $e');
+        debugPrint('[PagosBloc] Error filtrando por período: $e');
       }
-      emit(PagosError('Error cambiando ordenamiento: $e'));
+      emit(PagosError('Error filtrando por período: $e'));
     }
   }
 
@@ -609,4 +728,103 @@ class PagosBloc extends Bloc<PagosEvent, PagosState> {
       emit(currentState.copyWith(isLoading: false, hasMore: true));
     }
   }
+
+  /// 🎯 NUEVA: Manejador para pago por adelantado
+  /// Reutiliza la lógica de registrarPago pero con período específico
+  Future<void> _onPagarPorAdelantado(
+    PagarPorAdelantado event,
+    Emitter<PagosState> emit,
+  ) async {
+    try {
+      // ✅ Usar método unificado registrarPago()
+      final resultado = await _service.registrarPago(
+        asesoradoId: event.asesoradoId,
+        monto: event.monto,
+        nota: event.nota,
+      );
+
+      if (kDebugMode) {
+        debugPrint(
+          "[PagosBloc] Pago adelantado registrado: ${event.monto} para período ${resultado['periodo']}",
+        );
+      }
+
+      // ✅ Verificar y aplicar estado de abono
+      await _service.verificarYAplicarEstadoAbono(
+        asesoradoId: event.asesoradoId,
+        periodo: resultado['periodo'] as String,
+      );
+
+      final periodoCompletado =
+          (resultado['periodo_completado'] as bool?) ?? false;
+
+      if (periodoCompletado) {
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosBloc] Período ${resultado['periodo']} completado por pago adelantado.',
+          );
+        }
+
+        emit(
+          PagoCompletado(
+            periodo: resultado['periodo'] as String,
+            montoTotal: event.monto,
+          ),
+        );
+        add(
+          LoadPagosDetails(
+            event.asesoradoId,
+            feedbackMessage:
+                'Pago adelantado registrado para ${resultado['periodo']}.',
+          ),
+        );
+      } else {
+        emit(
+          AbonoRegistrado(
+            saldoPendiente: (resultado['saldo_pendiente'] as double?) ?? 0.0,
+            totalAbonado:
+                (resultado['total_abonado'] as double?) ?? event.monto,
+            periodo: resultado['periodo'] as String,
+          ),
+        );
+        add(
+          LoadPagosDetails(
+            event.asesoradoId,
+            feedbackMessage: 'Pago adelantado registrado.',
+          ),
+        );
+      }
+
+      _invalidateCache(event.asesoradoId);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[PagosBloc] Error en pago adelantado: $e');
+      }
+      emit(PagosError('Error registrando pago adelantado: $e'));
+    }
+  }
+}
+
+class _LoadPagosSignature {
+  final int asesoradoId;
+  final int pageNumber;
+  final String? searchQuery;
+
+  const _LoadPagosSignature({
+    required this.asesoradoId,
+    required this.pageNumber,
+    required this.searchQuery,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! _LoadPagosSignature) return false;
+    return asesoradoId == other.asesoradoId &&
+        pageNumber == other.pageNumber &&
+        searchQuery == other.searchQuery;
+  }
+
+  @override
+  int get hashCode => Object.hash(asesoradoId, pageNumber, searchQuery);
 }

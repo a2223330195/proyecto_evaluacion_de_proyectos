@@ -1,6 +1,7 @@
 // lib/services/db_connection.dart
 
 import 'dart:developer' as developer;
+import 'dart:async';
 import 'package:mysql1/mysql1.dart';
 import 'package:coachhub/services/data_seeder_service.dart';
 
@@ -96,68 +97,87 @@ class DatabaseConnection {
     );
   }
 
-  // Método de query (Robusto)
+  // Método de query con reintentos automáticos para evitar "packets out of order"
   Future<Results> query(String sql, [List<Object?>? params]) async {
-    try {
-      final conn = await connection;
+    int retryCount = 0;
+    const maxRetries = 3;
 
-      // Usar consulta con parámetros
-      if (params != null && params.isNotEmpty) {
-        developer.log(
-          'Ejecutando consulta con parámetros: $sql con Parámetros: $params',
-          name: 'DatabaseConnection',
-        );
-        final results = await conn.query(sql, params);
+    while (retryCount < maxRetries) {
+      try {
+        final conn = await connection;
 
-        // Log detallado del resultado
-        if (results.isNotEmpty) {
-          developer.log(
-            'Resultado de la consulta:\n'
-            'Número de filas: ${results.length}\n'
-            'Nombres de columnas: ${results.fields.map((f) => f.name).toList()}\n'
-            'Primera fila: ${results.first.fields}\n'
-            'Tipos de datos: ${results.fields.map((f) => "${f.name}: ${f.type}").toList()}',
-            name: 'DatabaseConnection',
-          );
+        // Usar consulta con parámetros
+        if (params != null && params.isNotEmpty) {
+          try {
+            final results = await conn.query(sql, params);
+            return results;
+          } on MySqlException catch (e) {
+            _handleMySqlError(e, sql, retryCount);
+            if (retryCount < maxRetries - 1) {
+              retryCount++;
+              await Future.delayed(Duration(milliseconds: 100 * retryCount));
+              continue;
+            }
+            rethrow;
+          }
         }
 
-        return results;
-      }
-
-      // Usar consulta directa si no hay parámetros
-      developer.log(
-        'Ejecutando consulta directa: $sql',
-        name: 'DatabaseConnection',
-      );
-      return await conn.query(sql);
-    } on MySqlException catch (e) {
-      // Códigos de error comunes para conexiones perdidas (ej. 2006, 2013)
-      if (e.errorNumber == 2006 || e.errorNumber == 2013) {
-        // Conexión perdida. Cierra la conexión vieja (si existe).
-        await _connection?.close();
-        _connection = null;
-
-        // Intenta de nuevo UNA vez más con una conexión fresca
-        // Intenta la consulta de nuevo con una conexión fresca
-        return await query(sql, params); // Usa el método recursivamente
-      } else {
-        // Log non-recoverable MySQL exceptions for debugging
+        // Usar consulta directa si no hay parámetros
+        try {
+          return await conn.query(sql);
+        } on MySqlException catch (e) {
+          _handleMySqlError(e, sql, retryCount);
+          if (retryCount < maxRetries - 1) {
+            retryCount++;
+            await Future.delayed(Duration(milliseconds: 100 * retryCount));
+            continue;
+          }
+          rethrow;
+        }
+      } catch (e, s) {
         developer.log(
-          'MySqlException en query: $sql',
+          'Error en query (intento $retryCount/$maxRetries): $sql\nError: $e',
           name: 'DatabaseConnection',
           error: e,
+          stackTrace: s,
+          level: 900,
         );
-        rethrow;
+
+        if (retryCount < maxRetries - 1) {
+          retryCount++;
+          await Future.delayed(Duration(milliseconds: 100 * retryCount));
+        } else {
+          rethrow;
+        }
       }
-    } catch (e, s) {
-      // Registra el error y el stacktrace para facilitar diagnóstico
+    }
+
+    throw Exception('Query fallida después de $maxRetries intentos: $sql');
+  }
+
+  /// Maneja errores de MySQL
+  void _handleMySqlError(MySqlException e, String sql, int retryCount) {
+    if (e.errorNumber == 1156 ||
+        e.errorNumber == 2006 ||
+        e.errorNumber == 2013) {
+      // Conexión corrupta o perdida - reintentar
       developer.log(
-        'Error inesperado en query: $sql',
+        'Conexión MySQL corrupta (Error ${e.errorNumber}). Intento ${retryCount + 1}...',
         name: 'DatabaseConnection',
         error: e,
-        stackTrace: s,
+        level: 800,
       );
-      rethrow;
+      _connection?.close();
+      _connection = null;
+      _schemaEnsured = false;
+    } else {
+      // Otro error - no reintentar
+      developer.log(
+        'Error MySQL no recuperable: ${e.errorNumber} - ${e.message}',
+        name: 'DatabaseConnection',
+        error: e,
+        level: 900,
+      );
     }
   }
 
@@ -172,10 +192,14 @@ class DatabaseConnection {
 
   Future<void> _ensureSchema(MySqlConnection conn) async {
     try {
+      // Esperar un poco antes de empezar
+      await Future.delayed(const Duration(milliseconds: 100));
+
       // Verificar si la columna batch_id existe
       final batchColumn = await conn.query(
         "SHOW COLUMNS FROM asignaciones_agenda LIKE 'batch_id'",
       );
+      await Future.delayed(const Duration(milliseconds: 100));
 
       // Si NO existe, agregarla
       if (batchColumn.isEmpty) {
@@ -187,6 +211,7 @@ class DatabaseConnection {
           await conn.query(
             'ALTER TABLE asignaciones_agenda ADD COLUMN batch_id INT NULL AFTER plantilla_id',
           );
+          await Future.delayed(const Duration(milliseconds: 100));
         } on MySqlException catch (e) {
           if (e.errorNumber == 1060) {
             developer.log(
@@ -198,19 +223,16 @@ class DatabaseConnection {
             rethrow;
           }
         }
-      } else {
-        developer.log(
-          'Columna batch_id ya existe en asignaciones_agenda, omitiendo.',
-          name: 'DatabaseConnection',
-        );
       }
 
       // Verificar si el constraint FOREIGN KEY ya existe
+      await Future.delayed(const Duration(milliseconds: 100));
       final existingConstraint = await conn.query(
         "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE "
         "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'asignaciones_agenda' "
         "AND COLUMN_NAME = 'batch_id' AND REFERENCED_TABLE_NAME = 'rutina_batches'",
       );
+      await Future.delayed(const Duration(milliseconds: 100));
 
       // Si NO existe, crearlo
       if (existingConstraint.isEmpty) {
@@ -225,6 +247,7 @@ class DatabaseConnection {
             'FOREIGN KEY (batch_id) REFERENCES rutina_batches(id) '
             'ON DELETE SET NULL',
           );
+          await Future.delayed(const Duration(milliseconds: 100));
         } on MySqlException catch (e) {
           if (e.errorNumber == 1061) {
             developer.log(
@@ -236,9 +259,55 @@ class DatabaseConnection {
             rethrow;
           }
         }
+      }
+
+      // Verificar si la tabla ejercicios_maestro tiene datos
+      await Future.delayed(const Duration(milliseconds: 100));
+      final ejerciciosCount = await conn.query(
+        'SELECT COUNT(*) as count FROM ejercicios_maestro',
+      );
+      final count = ejerciciosCount.first['count'] as int;
+
+      if (count == 0) {
+        developer.log(
+          'Tabla ejercicios_maestro vacía. Insertando ejercicios iniciales...',
+          name: 'DatabaseConnection',
+        );
+        // Insertar ejercicios iniciales (mínimo 10 para que la app funcione)
+        final basicExercises = [
+          "('Pechada', 'pecho', 'mancuerna', NULL, 'coachhub')",
+          "('Flexiones', 'pecho', 'solo cuerpo', NULL, 'coachhub')",
+          "('Press de Banca', 'pecho', 'mancuerna', NULL, 'coachhub')",
+          "('Sentadilla', 'cuádriceps', 'mancuerna', NULL, 'coachhub')",
+          "('Peso Muerto', 'espalda baja', 'mancuerna', NULL, 'coachhub')",
+          "('Remo', 'espalda media', 'mancuerna', NULL, 'coachhub')",
+          "('Pull-up', 'Los lats', 'solo cuerpo', NULL, 'coachhub')",
+          "('Curl de Bíceps', 'bíceps', 'mancuerna', NULL, 'coachhub')",
+          "('Extensión de Tríceps', 'tríceps', 'mancuerna', NULL, 'coachhub')",
+          "('Press de Hombro', 'hombros', 'mancuerna', NULL, 'coachhub')",
+        ];
+
+        for (final exercise in basicExercises) {
+          try {
+            await conn.query(
+              'INSERT IGNORE INTO ejercicios_maestro (nombre, musculo_principal, equipamiento, video_url, fuente) VALUES $exercise',
+            );
+            await Future.delayed(const Duration(milliseconds: 50));
+          } catch (e) {
+            developer.log(
+              'Error insertando ejercicio: $e',
+              name: 'DatabaseConnection',
+              level: 800,
+            );
+          }
+        }
+        developer.log(
+          'Ejercicios iniciales insertados.',
+          name: 'DatabaseConnection',
+        );
       } else {
         developer.log(
-          'Constraint fk_asignaciones_batch ya existe, omitiendo.',
+          'Tabla ejercicios_maestro ya tiene $count ejercicios.',
           name: 'DatabaseConnection',
         );
       }
@@ -252,7 +321,7 @@ class DatabaseConnection {
         );
       } else {
         developer.log(
-          'Error asegurando el esquema de asignaciones_agenda',
+          'Error asegurando el esquema',
           name: 'DatabaseConnection',
           error: e,
           level: 1000,
@@ -261,7 +330,7 @@ class DatabaseConnection {
       }
     } catch (e, s) {
       developer.log(
-        'Error inesperado asegurando el esquema de asignaciones_agenda',
+        'Error inesperado asegurando el esquema',
         name: 'DatabaseConnection',
         error: e,
         stackTrace: s,

@@ -61,16 +61,21 @@ class CrearRutinaScreenState extends State<CrearRutinaScreen> {
       [widget.rutina!.id],
     );
 
+    // Verificar que el widget aún está activo antes de actualizar estado
+    if (!mounted) return;
+
     final ejerciciosCargados =
         results.map((row) => Ejercicio.fromMap(row.fields)).toList();
 
     setState(() {
+      // Limpiar la lista antes de agregar los ejercicios cargados
+      _ejercicios.clear();
       _ejercicios.addAll(ejerciciosCargados);
     });
   }
   // --- FIN CORRECCIÓN 2 ---
 
-  // --- INICIO CORRECCIÓN 1: Lógica de guardado mejorada ---
+  // --- INICIO CORRECCIÓN 1: Lógica de guardado mejorada con diffs ---
   Future<void> _guardarPlantilla() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
@@ -84,17 +89,24 @@ class CrearRutinaScreenState extends State<CrearRutinaScreen> {
         int plantillaId;
 
         if (isEditing) {
-          // --- MODO EDICIÓN ---
+          // --- MODO EDICIÓN: Usar diff para cambios mínimos ---
           plantillaId = widget.rutina!.id;
-          // 1. Actualizar la plantilla
-          await db.query(
-            'UPDATE rutinas_plantillas SET nombre = ?, descripcion = ?, categoria = ? WHERE id = ?',
-            [_nombre, _descripcion, _categoria.name, plantillaId],
-          );
-          // 2. Borrar ejercicios viejos
-          await db.query('DELETE FROM ejercicios WHERE plantilla_id = ?', [
-            plantillaId,
-          ]);
+
+          // 1. Actualizar la plantilla SOLO si hubo cambios
+          final plantillaChanged =
+              _nombre != widget.rutina!.nombre ||
+              _descripcion != widget.rutina!.descripcion ||
+              _categoria != widget.rutina!.categoria;
+
+          if (plantillaChanged) {
+            await db.query(
+              'UPDATE rutinas_plantillas SET nombre = ?, descripcion = ?, categoria = ? WHERE id = ?',
+              [_nombre, _descripcion, _categoria.name, plantillaId],
+            );
+          }
+
+          // 2. Actualizar ejercicios con diff (solo los que cambiaron)
+          await _updateExercisesWithDiff(plantillaId, db);
         } else {
           // --- MODO CREACIÓN ---
           final results = await db.query(
@@ -102,12 +114,113 @@ class CrearRutinaScreenState extends State<CrearRutinaScreen> {
             [_nombre, _descripcion, _categoria.name],
           );
           plantillaId = results.insertId!;
+
+          // Insertar todos los ejercicios para nueva plantilla
+          await _insertAllExercises(plantillaId, db);
         }
 
-        // 3. Insertar todos los ejercicios (sean nuevos o actualizados)
+        if (!mounted) return;
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Plantilla de rutina ${isEditing ? 'actualizada' : 'guardada'} con éxito',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        navigator.pop(true);
+      } catch (e) {
+        if (!mounted) return;
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Error al guardar la plantilla: $e',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.warning,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Inserta todos los ejercicios para una plantilla nueva
+  Future<void> _insertAllExercises(
+    int plantillaId,
+    DatabaseConnection db,
+  ) async {
+    for (var i = 0; i < _ejercicios.length; i++) {
+      final ejercicio = _ejercicios[i];
+      await db.query(
+        'INSERT INTO ejercicios (plantilla_id, ejercicio_maestro_id, series, repeticiones, indicador_carga, descanso, notas, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          plantillaId,
+          ejercicio.ejercicioMaestroId,
+          ejercicio.series,
+          ejercicio.repeticiones,
+          ejercicio.indicadorCarga,
+          ejercicio.descanso,
+          ejercicio.notas,
+          i,
+        ],
+      );
+    }
+  }
+
+  /// Actualiza ejercicios usando diff (solo elimina y reinsertar si hay cambios)
+  /// 🔧 CORRECCIÓN #1: Usa transacción nativa con BEGIN/COMMIT/ROLLBACK explícitos
+  /// Esto evita que otras consultas simultáneas interfieran con el estado transaccional
+  Future<void> _updateExercisesWithDiff(
+    int plantillaId,
+    DatabaseConnection db,
+  ) async {
+    final connection = await db.connection;
+
+    try {
+      // Iniciar transacción explícita
+      await connection.query('START TRANSACTION');
+
+      // Cargar ejercicios previos
+      final previousResults = await connection.query(
+        'SELECT id FROM ejercicios WHERE plantilla_id = ? ORDER BY orden',
+        [plantillaId],
+      );
+
+      final previousCount = previousResults.length;
+      final newCount = _ejercicios.length;
+
+      // Si el número de ejercicios cambió, borrar todos y reinsertar
+      // Si no, actualizar en lugar
+      if (previousCount != newCount) {
+        // Cambio en cantidad: borrar todos y reinsertar
+        await connection.query(
+          'DELETE FROM ejercicios WHERE plantilla_id = ?',
+          [plantillaId],
+        );
+
+        // Reinsertar todos los ejercicios
         for (var i = 0; i < _ejercicios.length; i++) {
           final ejercicio = _ejercicios[i];
-          await db.query(
+          await connection.query(
             'INSERT INTO ejercicios (plantilla_id, ejercicio_maestro_id, series, repeticiones, indicador_carga, descanso, notas, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [
               plantillaId,
@@ -117,28 +230,47 @@ class CrearRutinaScreenState extends State<CrearRutinaScreen> {
               ejercicio.indicadorCarga,
               ejercicio.descanso,
               ejercicio.notas,
-              i, // --- VALOR AÑADIDO (el orden) ---
+              i,
             ],
           );
         }
+      } else {
+        // Misma cantidad: actualizar uno a uno (más eficiente)
+        for (var i = 0; i < _ejercicios.length; i++) {
+          final ejercicio = _ejercicios[i];
+          final previousRow = previousResults.elementAt(i);
+          final previousId =
+              int.tryParse(previousRow.fields['id'].toString()) ?? 0;
 
-        if (!mounted) return;
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Plantilla de rutina ${isEditing ? 'actualizada' : 'guardada'} con éxito',
-            ),
-          ),
-        );
-        navigator.pop(true);
-      } catch (e) {
-        if (!mounted) return;
-        scaffoldMessenger.showSnackBar(
-          SnackBar(content: Text('Error al guardar la plantilla: $e')),
-        );
+          await connection.query(
+            'UPDATE ejercicios SET ejercicio_maestro_id = ?, series = ?, repeticiones = ?, indicador_carga = ?, descanso = ?, notas = ?, orden = ? WHERE id = ?',
+            [
+              ejercicio.ejercicioMaestroId,
+              ejercicio.series,
+              ejercicio.repeticiones,
+              ejercicio.indicadorCarga,
+              ejercicio.descanso,
+              ejercicio.notas,
+              i,
+              previousId,
+            ],
+          );
+        }
       }
+
+      // Commit si todo fue bien
+      await connection.query('COMMIT');
+    } catch (e) {
+      // Rollback en caso de error
+      try {
+        await connection.query('ROLLBACK');
+      } catch (_) {
+        // Ignorar error en rollback
+      }
+      rethrow;
     }
-  } // --- FIN CORRECCIÓN 1 ---
+  }
+  // --- FIN CORRECCIÓN 2 ---
 
   // --- Helper Methods para Build ---
 
@@ -234,7 +366,7 @@ class CrearRutinaScreenState extends State<CrearRutinaScreen> {
       padding: const EdgeInsets.symmetric(vertical: 16.0),
       child: ElevatedButton.icon(
         onPressed: _guardarPlantilla,
-        icon: const Icon(Icons.save),
+        icon: const Icon(Icons.save, color: Colors.white),
         label: Text(
           widget.rutina == null
               ? 'Guardar Nueva Plantilla'
@@ -433,7 +565,10 @@ class CrearRutinaScreenState extends State<CrearRutinaScreen> {
                               SizedBox(
                                 width: double.maxFinite,
                                 child: ElevatedButton.icon(
-                                  icon: const Icon(Icons.search),
+                                  icon: const Icon(
+                                    Icons.search,
+                                    color: Colors.white,
+                                  ),
                                   label: const Text('Buscar Ejercicio'),
                                   onPressed: () async {
                                     final resultado =

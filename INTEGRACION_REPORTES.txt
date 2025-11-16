@@ -1,0 +1,313 @@
+// INSTRUCCIONES DE INTEGRACIÓN DEL MÓDULO DE REPORTES EN COACHUB
+
+// ==============================================================================
+// PASO 1: AGREGAR REPORTSBLOC A TU APLICACIÓN PRINCIPAL
+// ==============================================================================
+
+// En tu archivo main.dart o donde configures los BLoCs:
+
+import 'package:coachhub/blocs/reportes/reports_bloc.dart';
+
+// Dentro de MultiRepositoryProvider o donde inicialices los BLoCs:
+BlocProvider(
+  create: (context) => ReportsBloc(),
+  child: // ... resto de tu app
+),
+
+// ==============================================================================
+// PASO 2: AGREGAR ENLACE EN NAVEGACIÓN PRINCIPAL
+// ==============================================================================
+
+// En tu dashboard o pantalla de navegación principal:
+
+import 'package:coachhub/screens/reports/reports_screen.dart';
+
+// Opción A: Dentro de un drawer o menú
+ListTile(
+  leading: const Icon(Icons.assessment),
+  title: const Text('Reportes'),
+  onTap: () {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ReportsScreen(
+          coachId: userCoachId, // Obtén del contexto o estado
+        ),
+      ),
+    );
+  },
+),
+
+// Opción B: Como botón en AppBar
+AppBar(
+  title: const Text('Dashboard'),
+  actions: [
+    IconButton(
+      icon: const Icon(Icons.assessment),
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ReportsScreen(
+              coachId: currentCoachId,
+            ),
+          ),
+        );
+      },
+    ),
+  ],
+),
+
+// ==============================================================================
+// PASO 3: CARGAR DATOS DE UN REPORTE ESPECÍFICO
+// ==============================================================================
+
+import 'package:coachhub/blocs/reportes/reports_bloc.dart';
+import 'package:coachhub/blocs/reportes/reports_event.dart';
+import 'package:coachhub/models/report_models.dart';
+
+// En cualquier parte de tu código:
+
+// Para reportes de pagos:
+context.read<ReportsBloc>().add(
+  LoadPaymentReport(
+    coachId: 1,
+    dateRange: DateRange(
+      startDate: DateTime(2024, 1, 1),
+      endDate: DateTime(2024, 12, 31),
+    ),
+    asesoradoId: null, // null para todos, o especifica un ID
+  ),
+);
+
+// Para reportes de rutinas:
+context.read<ReportsBloc>().add(
+  LoadRoutineReport(
+    coachId: 1,
+    dateRange: DateRange(
+      startDate: DateTime(2024, 11, 1),
+      endDate: DateTime(2024, 11, 30),
+    ),
+  ),
+);
+
+// Para reportes de métricas:
+context.read<ReportsBloc>().add(
+  LoadMetricsReport(
+    coachId: 1,
+    dateRange: DateRange(
+      startDate: DateTime.now().subtract(const Duration(days: 90)),
+      endDate: DateTime.now(),
+    ),
+  ),
+);
+
+// Para reportes de bitácora:
+context.read<ReportsBloc>().add(
+  LoadBitacoraReport(
+    coachId: 1,
+    dateRange: DateRange(
+      startDate: DateTime(2024, 1, 1),
+      endDate: DateTime.now(),
+    ),
+  ),
+);
+
+// ==============================================================================
+// PASO 4: ESCUCHAR EVENTOS DE EXPORTACIÓN
+// ==============================================================================
+
+// Dentro de un BlocListener o BlocConsumer:
+
+BlocListener<ReportsBloc, ReportsState>(
+  listener: (context, state) {
+    if (state is ExportSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Archivo exportado: ${state.filePath}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+    
+    if (state is ReportsError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${state.message}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  },
+  child: // ... resto del widget
+),
+
+// ==============================================================================
+// PASO 5: PERSONALIZAR FILTROS (OPCIONAL)
+// ==============================================================================
+
+// Para agregar filtro por asesorado:
+// 1. Obtener lista de asesorados del servicio
+// 2. Agregar dropdown en ReportsScreen
+// 3. Usar SelectAsesorado event para cambiar filtro
+
+context.read<ReportsBloc>().add(
+  SelectAsesorado(asesoradoId), // null para todos
+);
+
+// ==============================================================================
+// PASO 6: INTEGRACIÓN CON DASHBOARD EXISTENTE
+// ==============================================================================
+
+// En dashboard_screen.dart, agregar tarjeta de acceso a reportes:
+
+Container(
+  padding: const EdgeInsets.all(16),
+  margin: const EdgeInsets.all(8),
+  decoration: BoxDecoration(
+    gradient: LinearGradient(
+      colors: [Colors.blue.shade400, Colors.blue.shade600],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    ),
+    borderRadius: BorderRadius.circular(12),
+  ),
+  child: InkWell(
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ReportsScreen(coachId: coachId),
+        ),
+      );
+    },
+    child: Row(
+      children: [
+        const Icon(Icons.assessment, color: Colors.white, size: 32),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Reportes',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Analiza pagos, métricas y progreso',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Icon(Icons.arrow_forward, color: Colors.white),
+      ],
+    ),
+  ),
+),
+
+// ==============================================================================
+// PASO 7: TEMAS Y PERSONALIZACIÓN
+// ==============================================================================
+
+// Los colores están definidos en report_colors.dart:
+// - ReportColors.primary (Indigo)
+// - ReportColors.secondary (Púrpura)
+// - ReportColors.success (Verde)
+// - ReportColors.warning (Ámbar)
+// - ReportColors.error (Rojo)
+
+// Para cambiar paleta, editar:
+// lib/utils/report_colors.dart
+
+// ==============================================================================
+// PASO 8: PRUEBAS
+// ==============================================================================
+
+// En test/unit o test/widget, probar:
+
+test('LoadPaymentReport event carga datos correctamente', () {
+  final bloc = ReportsBloc();
+  final dateRange = DateRange(
+    startDate: DateTime(2024, 1, 1),
+    endDate: DateTime(2024, 12, 31),
+  );
+  
+  bloc.add(LoadPaymentReport(
+    coachId: 1,
+    dateRange: dateRange,
+  ));
+  
+  expect(
+    bloc.stream,
+    emitsInOrder([
+      isA<ReportsLoading>(),
+      isA<PaymentReportLoaded>(),
+    ]),
+  );
+});
+
+// ==============================================================================
+// SOLUCIÓN DE PROBLEMAS
+// ==============================================================================
+
+// ❌ Error: "Target of URI doesn't exist"
+// ✅ Solución: Asegúrate de haber creado todos los archivos en las rutas correctas
+
+// ❌ Error: "ReportsBloc no está disponible"
+// ✅ Solución: Wrap ReportsScreen con BlocProvider(create: ...)
+
+// ❌ Error: "BuildContext across async gaps"
+// ✅ Solución: Usa 'if (mounted)' antes de acceder al context
+
+// ❌ No se exportan archivos
+// ✅ Solución: Verifica que la app tenga permisos de escritura en Documents
+
+// ==============================================================================
+// CARACTERÍSTICAS LISTAS PARA USAR
+// ==============================================================================
+
+✅ Reportes de Pagos
+✅ Reportes de Rutinas
+✅ Reportes de Métricas
+✅ Reportes de Bitácora
+✅ Exportación a PDF
+✅ Exportación a Excel
+✅ Selector de rangos de fechas
+✅ Filtrado por asesorado
+✅ Gráficos interactivos
+✅ Tablas de datos
+✅ Resúmenes estadísticos
+
+// ==============================================================================
+// API DE EVENTOS DISPONIBLES
+// ==============================================================================
+
+LoadPaymentReport(coachId, dateRange, asesoradoId?)
+LoadRoutineReport(coachId, dateRange, asesoradoId?)
+LoadMetricsReport(coachId, dateRange, asesoradoId?)
+LoadBitacoraReport(coachId, dateRange, asesoradoId?)
+LoadConsolidatedReport(coachId, dateRange, asesoradoId?)
+ChangeDateRange(dateRange)
+SelectAsesorado(asesoradoId?)
+ExportReportToPdf(reportType)
+ExportReportToExcel(reportType)
+
+// ==============================================================================
+// NOTAS IMPORTANTES
+// ==============================================================================
+
+// 1. Los archivos se guardan en getApplicationDocumentsDirectory()
+// 2. Todos los reportes incluyen timestamps de generación
+// 3. Las consultas están optimizadas para multi-tenant (por coach_id)
+// 4. Los datos se cachean automáticamente
+// 5. Soporte completo para filtrado dinámico
+
+// ¡Implementación completada y lista para producción! 🚀

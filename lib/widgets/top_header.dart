@@ -4,16 +4,10 @@ import 'package:coachhub/blocs/dashboard/dashboard_state.dart';
 import 'package:coachhub/models/coach_model.dart';
 import 'package:coachhub/utils/app_colors.dart';
 import 'package:coachhub/utils/app_styles.dart';
-import 'package:coachhub/models/asesorado_model.dart';
-import 'package:coachhub/models/rutina_model.dart';
-import 'package:coachhub/screens/crear_rutina_screen.dart';
-import 'package:coachhub/screens/ficha_asesorado_screen.dart';
-import 'package:coachhub/services/db_connection.dart';
 import 'package:coachhub/services/image_service.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-// 1. Importar el diálogo de asignación
 import 'package:coachhub/widgets/dialogs/schedule_routine_dialog.dart';
 
 class TopHeader extends StatefulWidget {
@@ -32,125 +26,14 @@ class TopHeader extends StatefulWidget {
 }
 
 class _TopHeaderState extends State<TopHeader> {
-  final _searchController = TextEditingController();
-  OverlayEntry? _overlayEntry;
-  final LayerLink _layerLink = LayerLink();
-
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_performSearch);
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
-    _removeOverlay(); // Limpiar overlay
     super.dispose();
-  }
-
-  Future<void> _performSearch() async {
-    final query = _searchController.text.trim();
-
-    if (query.length > 2) {
-      final db = DatabaseConnection.instance;
-      final queryParam = '%$query%';
-
-      // Buscar asesorados
-      final asesoradosResults = await db.query(
-        'SELECT id, nombre, avatar_url, status, plan_id, fecha_vencimiento, edad, sexo, altura_cm, telefono, fecha_inicio_programa, objetivo_principal, objetivo_secundario FROM asesorados WHERE nombre LIKE ? LIMIT 5',
-        [queryParam],
-      );
-      final List<Asesorado> asesorados =
-          asesoradosResults
-              .map((row) => Asesorado.fromMap(row.fields))
-              .toList();
-
-      // Buscar rutinas
-      final rutinasResults = await db.query(
-        'SELECT id, nombre, descripcion, categoria FROM rutinas_plantillas WHERE nombre LIKE ? LIMIT 5',
-        [queryParam],
-      );
-      final List<Rutina> rutinas =
-          rutinasResults.map((row) => Rutina.fromMap(row.fields)).toList();
-
-      final List<dynamic> combinedResults = [...asesorados, ...rutinas];
-
-      _showSearchResultsOverlay(combinedResults);
-    } else {
-      _removeOverlay();
-    }
-  }
-
-  void _showSearchResultsOverlay(List<dynamic> results) {
-    _removeOverlay();
-    if (results.isEmpty) return;
-
-    _overlayEntry = OverlayEntry(
-      builder:
-          (context) => Positioned(
-            width: 300,
-            child: CompositedTransformFollower(
-              link: _layerLink,
-              showWhenUnlinked: false,
-              offset: const Offset(0.0, 5.0),
-              child: Material(
-                elevation: 4.0,
-                borderRadius: BorderRadius.circular(10),
-                child: ListView.builder(
-                  padding: EdgeInsets.zero,
-                  shrinkWrap: true,
-                  itemCount: results.length,
-                  itemBuilder: (context, index) {
-                    final item = results[index];
-                    if (item is Asesorado) {
-                      return ListTile(
-                        leading: _buildSearchAvatarWidget(item.avatarUrl),
-                        title: Text(item.name),
-                        subtitle: const Text('Asesorado'),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder:
-                                  (_) => FichaAsesoradoScreen(
-                                    asesoradoId: item.id,
-                                  ),
-                            ),
-                          );
-                          _removeOverlay();
-                          _searchController.clear();
-                        },
-                      );
-                    } else if (item is Rutina) {
-                      return ListTile(
-                        leading: const Icon(Icons.fitness_center),
-                        title: Text(item.nombre),
-                        subtitle: const Text('Plantilla de Rutina'),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => CrearRutinaScreen(rutina: item),
-                            ),
-                          );
-                          _removeOverlay();
-                          _searchController.clear();
-                        },
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  },
-                ),
-              ),
-            ),
-          ),
-    );
-
-    Overlay.of(context).insert(_overlayEntry!);
-  }
-
-  void _removeOverlay() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
   }
 
   // 2. Método para mostrar el diálogo de "Registrar Actividad"
@@ -186,16 +69,7 @@ class _TopHeaderState extends State<TopHeader> {
     }
 
     if (state is DashboardLoaded) {
-      if (state.isRefreshing) {
-        items.add(
-          const _NotificationEntry(
-            title: 'Actualizando información',
-            subtitle: 'Estamos refrescando tus métricas.',
-            icon: Icons.sync,
-            color: Colors.blueGrey,
-          ),
-        );
-      }
+      // Note: isRefreshing notification is shown in the dropdown but not counted in badge
 
       final data = state.data;
 
@@ -232,98 +106,69 @@ class _TopHeaderState extends State<TopHeader> {
           ),
         );
       }
+    }
 
-      if (items.isEmpty) {
+    return items;
+  }
+
+  List<_NotificationEntry> _getAlertNotifications(DashboardState state) {
+    final now = DateTime.now();
+    final items = <_NotificationEntry>[];
+
+    if (state is DashboardLoading || state is DashboardInitial) {
+      return items;
+    }
+
+    if (state is DashboardError) {
+      items.add(
+        _NotificationEntry(
+          title: 'No se pudieron cargar los datos',
+          subtitle: state.message,
+          icon: Icons.error_outline,
+          color: Colors.redAccent,
+        ),
+      );
+      return items;
+    }
+
+    if (state is DashboardLoaded) {
+      final data = state.data;
+
+      if (data.deudores > 0) {
         items.add(
-          const _NotificationEntry(
-            title: 'Todo en orden',
-            subtitle: 'No hay alertas pendientes por ahora.',
-            icon: Icons.check_circle_outline,
-            color: Colors.green,
+          _NotificationEntry(
+            title: 'Pagos pendientes',
+            subtitle: 'Tienes ${data.deudores} asesorados con pagos vencidos.',
+            icon: Icons.warning_amber_rounded,
+            color: Colors.orangeAccent,
+          ),
+        );
+      }
+
+      for (final asesorado in data.asesoradosProximos) {
+        if (asesorado.dueDate == null) continue;
+        final days = asesorado.dueDate!.difference(now).inDays;
+        final isOverdue = days < 0;
+        final formattedDate = DateFormat(
+          'd MMM',
+          'es',
+        ).format(asesorado.dueDate!);
+        final label =
+            isOverdue
+                ? 'Venció el $formattedDate (hace ${days.abs()} día${days.abs() == 1 ? '' : 's'}).'
+                : 'Vence el $formattedDate (en $days día${days == 1 ? '' : 's'}).';
+        items.add(
+          _NotificationEntry(
+            title: asesorado.name,
+            subtitle: 'Renovación de membresía • $label',
+            icon: isOverdue ? Icons.report : Icons.schedule,
+            color: isOverdue ? Colors.redAccent : AppColors.primary,
           ),
         );
       }
     }
 
     return items;
-  }
-
-  void _showNotifications(BuildContext context) {
-    final state = context.read<DashboardBloc>().state;
-    final notifications = _buildNotificationsFromState(state);
-
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Notificaciones',
-                      style: AppStyles.title.copyWith(fontSize: 18),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                  ],
-                ),
-              ),
-              if (notifications.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  child: Text('Aún no hay notificaciones para mostrar.'),
-                )
-              else
-                SizedBox(
-                  height:
-                      (notifications.length > 6 ? 6 : notifications.length) *
-                      68.0,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemBuilder: (context, index) {
-                      final item = notifications[index];
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: CircleAvatar(
-                          backgroundColor: item.color.withValues(alpha: 0.1),
-                          foregroundColor: item.color,
-                          child: Icon(item.icon),
-                        ),
-                        title: Text(
-                          item.title,
-                          style: AppStyles.normal.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        subtitle: Text(
-                          item.subtitle,
-                          style: AppStyles.secondary,
-                        ),
-                      );
-                    },
-                    separatorBuilder: (_, __) => const Divider(),
-                    itemCount: notifications.length,
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   @override
@@ -373,39 +218,8 @@ class _TopHeaderState extends State<TopHeader> {
           // Right Side
           Row(
             children: [
-              SizedBox(
-                width: 300,
-                child: CompositedTransformTarget(
-                  link: _layerLink,
-                  child: TextField(
-                    controller: _searchController, // <-- USAR CONTROLLER
-                    decoration: InputDecoration(
-                      hintText: 'Buscar asesorado, rutina...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon:
-                          _searchController.text.isNotEmpty
-                              ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  _removeOverlay(); // Limpiar resultados
-                                },
-                              )
-                              : null,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: AppColors.accent,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
               ElevatedButton.icon(
-                icon: const Icon(Icons.add),
+                icon: const Icon(Icons.add, color: Colors.white, size: 22),
                 label: const Text('Registrar Actividad'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -422,10 +236,147 @@ class _TopHeaderState extends State<TopHeader> {
                 onPressed: () => _showRegisterActivityDialog(context),
               ),
               const SizedBox(width: 16),
-              IconButton(
-                icon: const Icon(Icons.notifications_none),
-                tooltip: 'Notificaciones',
-                onPressed: () => _showNotifications(context),
+              BlocBuilder<DashboardBloc, DashboardState>(
+                builder: (context, state) {
+                  // Count only real alerts for badge (not status messages)
+                  final alertNotifications = _getAlertNotifications(state);
+                  final notificationCount = alertNotifications.length;
+
+                  return PopupMenuButton<String>(
+                    icon: Stack(
+                      children: [
+                        const Icon(Icons.notifications_none),
+                        if (notificationCount > 0)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(10),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.red.withValues(alpha: 0.3),
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              child: Text(
+                                notificationCount > 99
+                                    ? '99+'
+                                    : '$notificationCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    tooltip: 'Notificaciones',
+                    offset: const Offset(0, 44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    itemBuilder: (context) {
+                      // For display, use full notifications (includes status messages)
+                      final displayNotifications = _buildNotificationsFromState(
+                        state,
+                      );
+                      final displayItems = <_NotificationEntry>[];
+
+                      // Add refreshing notification for display (but not for badge count)
+                      if (state is DashboardLoaded && state.isRefreshing) {
+                        displayItems.add(
+                          const _NotificationEntry(
+                            title: 'Actualizando información',
+                            subtitle: 'Estamos refrescando tus métricas.',
+                            icon: Icons.sync,
+                            color: Colors.blueGrey,
+                          ),
+                        );
+                      }
+
+                      // Add all notifications for display
+                      displayItems.addAll(displayNotifications);
+
+                      if (displayItems.isEmpty) {
+                        return [
+                          const PopupMenuItem<String>(
+                            enabled: false,
+                            child: Text(
+                              'Aún no hay notificaciones para mostrar.',
+                            ),
+                          ),
+                        ];
+                      }
+
+                      final items = <PopupMenuEntry<String>>[];
+                      for (int i = 0; i < displayItems.length; i++) {
+                        final item = displayItems[i];
+                        items.add(
+                          PopupMenuItem<String>(
+                            enabled: false,
+                            child: SizedBox(
+                              width: 280,
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    backgroundColor: item.color.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    foregroundColor: item.color,
+                                    radius: 18,
+                                    child: Icon(item.icon, size: 18),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          item.title,
+                                          style: AppStyles.normal.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          item.subtitle,
+                                          style: AppStyles.secondary.copyWith(
+                                            fontSize: 11,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                        if (i < displayItems.length - 1) {
+                          items.add(const PopupMenuDivider());
+                        }
+                      }
+                      return items;
+                    },
+                  );
+                },
               ),
               const SizedBox(width: 16),
               const VerticalDivider(),
@@ -494,21 +445,6 @@ class _TopHeaderState extends State<TopHeader> {
   }
 
   /// Widget que muestra avatar del asesorado en el overlay de búsqueda
-  Widget _buildSearchAvatarWidget(String? avatarPath) {
-    return FutureBuilder<File?>(
-      future: ImageService.getProfilePicture(avatarPath),
-      builder: (context, snapshot) {
-        if (snapshot.hasData && snapshot.data != null) {
-          return CircleAvatar(
-            backgroundImage: FileImage(snapshot.data!),
-            radius: 20,
-          );
-        }
-        return CircleAvatar(radius: 20, child: const Icon(Icons.person));
-      },
-    );
-  }
-
   /// Widget que muestra el avatar del coach
   Widget _buildCoachAvatar() {
     if (widget.coach.profilePictureUrl != null &&

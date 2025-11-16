@@ -1,70 +1,138 @@
-// lib/widgets/ficha_asesorado/lotes_programados_card.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:coachhub/blocs/lotes_programados/lotes_programados_bloc.dart';
 import 'package:coachhub/blocs/lotes_programados/lotes_programados_event.dart';
 import 'package:coachhub/blocs/lotes_programados/lotes_programados_state.dart';
+import 'package:coachhub/blocs/entrenamientos/entrenamientos_bloc.dart';
+import 'package:coachhub/blocs/entrenamientos/entrenamientos_state.dart';
 import 'package:coachhub/models/rutina_batch_detalle_model.dart';
 import 'package:coachhub/utils/app_colors.dart';
 import 'package:coachhub/utils/app_styles.dart';
 
-class LotesProgramadosCard extends StatelessWidget {
+class LotesProgramadosCard extends StatefulWidget {
   final int asesoradoId;
 
   const LotesProgramadosCard({super.key, required this.asesoradoId});
 
   @override
-  Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => LotesProgramadosBloc()..add(LoadLotes(asesoradoId)),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        padding: const EdgeInsets.all(16.0),
-        decoration: AppStyles.cardDecoration,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Lotes Programados', style: AppStyles.titleStyle),
-            const Divider(height: 24),
-            BlocBuilder<LotesProgramadosBloc, LotesProgramadosState>(
-              builder: (context, state) {
-                if (state is LotesProgramadosLoading ||
-                    state is LotesProgramadosInitial) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+  State<LotesProgramadosCard> createState() => _LotesProgramadosCardState();
+}
 
+class _LotesProgramadosCardState extends State<LotesProgramadosCard> {
+  late final LotesProgramadosBloc _lotesProgramadosBloc;
+
+  @override
+  void initState() {
+    super.initState();
+    _lotesProgramadosBloc =
+        LotesProgramadosBloc()..add(LoadLotes(widget.asesoradoId));
+  }
+
+  @override
+  void dispose() {
+    _lotesProgramadosBloc.close();
+    super.dispose();
+  }
+
+  /// Recarga los lotes (llamado desde el exterior, ej: después de programar una rutina)
+  void reloadLotes() {
+    _lotesProgramadosBloc.add(LoadLotes(widget.asesoradoId));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider.value(
+      value: _lotesProgramadosBloc,
+      child: _buildCard(context),
+    );
+  }
+
+  Widget _buildCard(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16.0),
+      decoration: AppStyles.cardDecoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Lotes Programados', style: AppStyles.titleStyle),
+          const Divider(height: 24),
+          // Escuchar cambios en EntrenamientosBloc para recargar lotes cuando se programa una rutina
+          BlocListener<EntrenamientosBloc, EntrenamientosState>(
+            listener: (context, state) {
+              if (state is EntrenamientosLoaded) {
+                // Cuando se carga una lista nueva de entrenamientos (después de programar),
+                // recargamos los lotes también
+                reloadLotes();
+              }
+            },
+            child: BlocListener<LotesProgramadosBloc, LotesProgramadosState>(
+              listener: (context, state) {
+                // Mostrar mensajes de error solo
                 if (state is LotesProgramadosError) {
-                  return Center(
-                    child: Text(
-                      state.message,
-                      style: AppStyles.secondary,
-                      textAlign: TextAlign.center,
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.white),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              state.message,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      backgroundColor: Colors.red.shade600,
+                      duration: const Duration(seconds: 3),
                     ),
                   );
                 }
+              },
+              child: BlocBuilder<LotesProgramadosBloc, LotesProgramadosState>(
+                builder: (context, state) {
+                  if (state is LotesProgramadosLoading ||
+                      state is LotesProgramadosInitial) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                if (state is LotesProgramadosLoaded) {
-                  if (state.lotes.isEmpty) {
-                    return const Center(
-                      child: Text('No hay lotes programados.'),
+                  if (state is LotesProgramadosError) {
+                    return Center(
+                      child: Text(
+                        state.message,
+                        style: AppStyles.secondary,
+                        textAlign: TextAlign.center,
+                      ),
                     );
                   }
 
-                  return Column(
-                    children:
-                        state.lotes
-                            .map((lote) => _buildLoteRow(lote, context))
-                            .toList(),
-                  );
-                }
+                  if (state is LotesProgramadosLoaded) {
+                    if (state.lotes.isEmpty) {
+                      return const Center(
+                        child: Text('No hay lotes programados.'),
+                      );
+                    }
 
-                return const SizedBox.shrink();
-              },
+                    return Column(
+                      children:
+                          state.lotes
+                              .map((lote) => _buildLoteRow(lote, context))
+                              .toList(),
+                    );
+                  }
+
+                  return const SizedBox.shrink();
+                },
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -146,7 +214,7 @@ class LotesProgramadosCard extends StatelessWidget {
           content: Text(
             '¿Estás seguro de que deseas eliminar el lote "${lote.rutinaNombre}" '
             '(${DateFormat('dd/MM/yy').format(lote.startDate)} - ${lote.endDate != null ? DateFormat('dd/MM/yy').format(lote.endDate!) : 'Sin fin'})? '
-            'Se eliminarán todas las ${lote.id} asignaciones asociadas.',
+            'Se eliminarán todas las asignaciones asociadas.',
           ),
           actions: [
             TextButton(
@@ -158,15 +226,7 @@ class LotesProgramadosCard extends StatelessWidget {
                 Navigator.pop(dialogContext);
                 // Disparar el evento de eliminación
                 context.read<LotesProgramadosBloc>().add(
-                  DeleteLote(batchId: lote.id, asesoradoId: asesoradoId),
-                );
-
-                // Mostrar confirmación
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Lote eliminado correctamente.'),
-                    backgroundColor: AppColors.success,
-                  ),
+                  DeleteLote(batchId: lote.id, asesoradoId: widget.asesoradoId),
                 );
               },
               child: const Text(

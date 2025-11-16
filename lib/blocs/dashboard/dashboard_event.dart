@@ -47,6 +47,18 @@ class UpdateStatistics extends DashboardEvent {
   List<Object?> get props => [];
 }
 
+/// Evento para marcar una sesión como completada
+/// Actualiza el estado en la DB y recalcula las estadísticas del dashboard
+class MarkSessionCompleted extends DashboardEvent {
+  final int asignacionId;
+  final int coachId;
+
+  const MarkSessionCompleted(this.asignacionId, this.coachId);
+
+  @override
+  List<Object?> get props => [asignacionId, coachId];
+}
+
 /// Evento para refrescar todo el dashboard
 /// Se ejecuta cuando el usuario hace pull-to-refresh
 class RefreshDashboard extends DashboardEvent {

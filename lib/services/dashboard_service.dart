@@ -33,15 +33,19 @@ class DashboardService {
   }
 
   /// Obtiene el total de asesorados por estado
-  Future<Map<String, int>> getAsesoradosStats() async {
-    final result = await _db.query('''
+  Future<Map<String, int>> getAsesoradosStats(int coachId) async {
+    final result = await _db.query(
+      '''
         SELECT 
           COUNT(*) AS total,
           SUM(CASE WHEN status = 'activo' THEN 1 ELSE 0 END) AS activos,
           SUM(CASE WHEN status = 'deudor' THEN 1 ELSE 0 END) AS deudores,
           SUM(CASE WHEN status = 'enPausa' THEN 1 ELSE 0 END) AS enPausa
         FROM asesorados
-      ''');
+        WHERE coach_id = ?
+      ''',
+      [coachId],
+    );
 
     if (result.isEmpty) {
       return {'total': 0, 'activos': 0, 'deudores': 0, 'enPausa': 0};
@@ -57,29 +61,38 @@ class DashboardService {
   }
 
   /// Calcula los ingresos mensuales proyectados
-  Future<double> getIngresosMensuales() async {
-    final result = await _db.query('''
-        SELECT COALESCE(SUM(monto), 0) AS total
-        FROM pagos_membresias
-        WHERE MONTH(fecha_pago) = MONTH(CURDATE())
-          AND YEAR(fecha_pago) = YEAR(CURDATE())
-      ''');
+  Future<double> getIngresosMensuales(int coachId) async {
+    final result = await _db.query(
+      '''
+        SELECT COALESCE(SUM(pm.monto), 0) AS total
+        FROM pagos_membresias pm
+        JOIN asesorados a ON pm.asesorado_id = a.id
+        WHERE a.coach_id = ?
+          AND MONTH(pm.fecha_pago) = MONTH(CURDATE())
+          AND YEAR(pm.fecha_pago) = YEAR(CURDATE())
+      ''',
+      [coachId],
+    );
 
     if (result.isEmpty) return 0.0;
     return _toDouble(result.first['total']);
   }
 
   /// Obtiene asesorados próximos a vencer (próximos 7 días)
-  Future<List<Asesorado>> getAsesoradosProximosAVencer() async {
-    final result = await _db.query('''
+  Future<List<Asesorado>> getAsesoradosProximosAVencer(int coachId) async {
+    final result = await _db.query(
+      '''
         SELECT *
         FROM asesorados 
-        WHERE fecha_vencimiento IS NOT NULL
+        WHERE coach_id = ?
+          AND fecha_vencimiento IS NOT NULL
           AND fecha_vencimiento <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
           AND status != 'enPausa'
         ORDER BY fecha_vencimiento ASC
         LIMIT 5
-      ''');
+      ''',
+      [coachId],
+    );
 
     if (result.isEmpty) {
       return const [];
@@ -89,7 +102,10 @@ class DashboardService {
   }
 
   /// Obtiene la agenda del día para la fecha proporcionada.
-  Future<List<AgendaSession>> getAgendaForDate(DateTime date) async {
+  Future<List<AgendaSession>> getAgendaForDate(
+    DateTime date,
+    int coachId,
+  ) async {
     final formattedDate = DateFormat('yyyy-MM-dd').format(date);
     const sql = '''
       SELECT
@@ -98,15 +114,17 @@ class DashboardService {
         ag.hora_asignada,
         a.id AS asesorado_id,
         a.nombre AS asesorado_nombre,
+        a.avatar_url AS asesorado_avatar_url,
         r.nombre AS rutina_nombre
       FROM asignaciones_agenda ag
       JOIN asesorados a ON ag.asesorado_id = a.id
       JOIN rutinas_plantillas r ON ag.plantilla_id = r.id
       WHERE ag.fecha_asignada = ?
+        AND a.coach_id = ?
       ORDER BY ag.hora_asignada
     ''';
 
-    final result = await _db.query(sql, [formattedDate]);
+    final result = await _db.query(sql, [formattedDate, coachId]);
     if (result.isEmpty) {
       return const [];
     }
@@ -119,6 +137,7 @@ class DashboardService {
             horaAsignada: row['hora_asignada']?.toString() ?? '--:--',
             asesoradoId: _toInt(row['asesorado_id']),
             asesoradoNombre: row['asesorado_nombre']?.toString() ?? 'N/A',
+            asesoradoAvatarUrl: row['asesorado_avatar_url']?.toString() ?? '',
             rutinaNombre: row['rutina_nombre']?.toString() ?? 'N/A',
           ),
         )
@@ -126,7 +145,10 @@ class DashboardService {
   }
 
   /// Devuelve la actividad reciente (máximo [limit] entradas).
-  Future<List<DashboardActivity>> getRecentActivity({int limit = 5}) async {
+  Future<List<DashboardActivity>> getRecentActivity(
+    int coachId, {
+    int limit = 5,
+  }) async {
     final result = await _db.query(
       '''
       SELECT 
@@ -136,11 +158,12 @@ class DashboardService {
       FROM asignaciones_agenda ag
       JOIN asesorados a ON ag.asesorado_id = a.id
       JOIN rutinas_plantillas r ON ag.plantilla_id = r.id
-      WHERE ag.status = 'completada'
+      WHERE a.coach_id = ?
+        AND ag.status = 'completada'
       ORDER BY ag.created_at DESC
       LIMIT ?
     ''',
-      [limit],
+      [coachId, limit],
     );
 
     if (result.isEmpty) {
@@ -163,16 +186,17 @@ class DashboardService {
   }
 
   /// Obtiene la lista de asesorados con pagos vencidos.
-  Future<List<Asesorado>> getDeudores({int limit = 5}) async {
+  Future<List<Asesorado>> getDeudores(int coachId, {int limit = 5}) async {
     final result = await _db.query(
       '''
         SELECT *
         FROM asesorados
-        WHERE status = 'deudor'
+        WHERE coach_id = ?
+          AND status = 'deudor'
         ORDER BY fecha_vencimiento ASC
         LIMIT ?
       ''',
-      [limit],
+      [coachId, limit],
     );
 
     if (result.isEmpty) {
@@ -185,6 +209,7 @@ class DashboardService {
   /// Obtiene las métricas semanales del dashboard para la semana dada.
   /// [weekOffset] permite navegar semanas anteriores o siguientes respecto a la actual.
   Future<WeeklySummary> getWeeklySummary({
+    required int coachId,
     int weekOffset = 0,
     int? asesoradosActivos,
   }) async {
@@ -216,11 +241,13 @@ class DashboardService {
         '''
           SELECT 
             COUNT(*) AS total,
-            SUM(CASE WHEN status = 'completada' THEN 1 ELSE 0 END) AS completadas
-          FROM asignaciones_agenda
-          WHERE fecha_asignada BETWEEN ? AND ?
+            SUM(CASE WHEN ag.status = 'completada' THEN 1 ELSE 0 END) AS completadas
+          FROM asignaciones_agenda ag
+          JOIN asesorados a ON ag.asesorado_id = a.id
+          WHERE a.coach_id = ?
+            AND ag.fecha_asignada BETWEEN ? AND ?
         ''',
-        [startBound, endBound],
+        [coachId, startBound, endBound],
       );
     } catch (_) {
       weeklyResult = [];
@@ -237,12 +264,17 @@ class DashboardService {
 
     dynamic asistenciaResult;
     try {
-      asistenciaResult = await _db.query('''
+      asistenciaResult = await _db.query(
+        '''
           SELECT 
             COUNT(*) AS total,
-            SUM(CASE WHEN status = 'completada' THEN 1 ELSE 0 END) AS completadas
-          FROM asignaciones_agenda
-        ''');
+            SUM(CASE WHEN ag.status = 'completada' THEN 1 ELSE 0 END) AS completadas
+          FROM asignaciones_agenda ag
+          JOIN asesorados a ON ag.asesorado_id = a.id
+          WHERE a.coach_id = ?
+        ''',
+        [coachId],
+      );
     } catch (_) {
       asistenciaResult = [];
     }
@@ -275,29 +307,45 @@ class DashboardService {
   }
 
   /// Actualiza el estado de asesorados a 'deudor' cuando la fecha de vencimiento expiró.
-  Future<void> updateDeudores() async {
+  Future<void> updateDeudores(int coachId) async {
     try {
-      await _db.query('''
+      await _db.query(
+        '''
         UPDATE asesorados 
         SET status = 'deudor' 
-        WHERE fecha_vencimiento < CURDATE() 
+        WHERE coach_id = ?
+          AND fecha_vencimiento < CURDATE() 
           AND status = 'activo'
-        ''');
+        ''',
+        [coachId],
+      );
     } catch (e) {
       rethrow;
     }
   }
 
   /// Obtiene el total de deudores actuales
-  Future<int> getDeudoresCount() async {
+  Future<int> getDeudoresCount(int coachId) async {
     try {
       final result = await _db.query(
-        'SELECT COUNT(*) as total FROM asesorados WHERE status = ?',
-        ['deudor'],
+        'SELECT COUNT(*) as total FROM asesorados WHERE coach_id = ? AND status = ?',
+        [coachId, 'deudor'],
       );
 
       if (result.isEmpty) return 0;
       return (result.first['total'] as int?) ?? 0;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Marca una sesión agendada como completada y actualiza en la base de datos
+  Future<void> markSessionAsCompleted(int asignacionId) async {
+    try {
+      await _db.query(
+        'UPDATE asignaciones_agenda SET status = ? WHERE id = ?',
+        ['completada', asignacionId],
+      );
     } catch (e) {
       rethrow;
     }

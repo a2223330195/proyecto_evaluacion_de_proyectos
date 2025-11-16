@@ -133,10 +133,12 @@ class AsesoradosBloc extends Bloc<AsesoradosEvent, AsesoradosState> {
         debugPrint('[AsesoradosBloc] Asesorado ${event.asesoradoId} eliminado');
       }
 
-      // Recargar página actual
-      add(LoadAsesorados(_currentPage, _coachId, _searchQuery, _statusFilter));
-
+      // Emitir estado de éxito
       emit(AsesoradoDeleted('Asesorado eliminado correctamente'));
+
+      // Recargar página actual después de un pequeño delay para permitir que el listener reaccione
+      await Future.delayed(const Duration(milliseconds: 500));
+      add(LoadAsesorados(_currentPage, _coachId, _searchQuery, _statusFilter));
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[AsesoradosBloc] Error eliminando asesorado: $e');

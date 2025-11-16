@@ -1,6 +1,7 @@
 import 'package:coachhub/blocs/pagos_pendientes/pagos_pendientes_bloc.dart';
 import 'package:coachhub/blocs/pagos_pendientes/pagos_pendientes_event.dart';
 import 'package:coachhub/blocs/pagos_pendientes/pagos_pendientes_state.dart';
+import 'package:coachhub/utils/app_colors.dart';
 import 'package:coachhub/utils/app_styles.dart';
 import 'package:coachhub/widgets/pagos_pendientes/asesorado_pago_card.dart';
 import 'package:flutter/material.dart';
@@ -46,26 +47,48 @@ class _PagosPendientesScreenState extends State<PagosPendientesScreen> {
         backgroundColor: Colors.grey[100],
         appBar: AppBar(
           elevation: 0,
-          backgroundColor: Colors.white,
-          title: const Text('Pagos Pendientes'),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () {
-                _pagosPendientesBloc.add(
-                  CargarPagosPendientes(
-                    widget.coachId,
-                    filtroEstado: _filterEstado,
-                    searchQuery: _searchController.text,
-                  ),
-                );
-              },
+          backgroundColor: Colors.transparent,
+          toolbarHeight: 80,
+          leading: const SizedBox.shrink(),
+          flexibleSpace: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.primary,
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Pagos Pendientes',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: AppColors.primary),
+                  onPressed: () {
+                    _pagosPendientesBloc.add(
+                      CargarPagosPendientes(
+                        widget.coachId,
+                        filtroEstado: _filterEstado,
+                        searchQuery: _searchController.text,
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         body: Column(
           children: [

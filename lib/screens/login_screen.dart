@@ -10,6 +10,9 @@ import 'package:coachhub/utils/app_colors.dart';
 import 'package:coachhub/utils/app_styles.dart';
 import 'package:bcrypt/bcrypt.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:coachhub/blocs/auth/auth_bloc.dart';
+import 'package:coachhub/blocs/auth/auth_event.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -64,7 +67,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    final navigator = Navigator.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final db = DatabaseConnection.instance;
     final email = _emailController.text;
@@ -95,7 +97,13 @@ class _LoginScreenState extends State<LoginScreen> {
           try {
             final coach = Coach.fromMap(coachData);
 
-            navigator.pushReplacement(
+            // Emitir evento de login al AuthBloc
+            if (!mounted) return;
+            context.read<AuthBloc>().add(LoginEvent(coach));
+
+            // Navegar al Dashboard
+            if (!mounted) return;
+            Navigator.of(context).pushReplacement(
               MaterialPageRoute(
                 builder: (context) => DashboardScreen(coach: coach),
               ),
@@ -203,23 +211,19 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(Icons.fitness_center, color: Colors.white, size: 60),
+            Image.asset(
+              'assets/logo/Logo CoachHUB.png',
+              height: 120,
+              fit: BoxFit.contain,
+            ),
             const SizedBox(height: 16),
             Text(
               'CoachHub',
               style: AppStyles.title.copyWith(
                 fontSize: 32,
                 color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tu centro de mando para el coaching.',
-              style: AppStyles.secondary.copyWith(
-                fontSize: 16,
-                color: Colors.white70,
               ),
             ),
           ],

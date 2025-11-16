@@ -10,11 +10,13 @@ import 'package:intl/intl.dart';
 class SummaryCard extends StatefulWidget {
   final WeeklySummary summary;
   final bool isRefreshing;
+  final int coachId;
 
   const SummaryCard({
     super.key,
     required this.summary,
     required this.isRefreshing,
+    required this.coachId,
   });
 
   @override
@@ -60,6 +62,7 @@ class _SummaryCardState extends State<SummaryCard> {
     try {
       final summary = await _dashboardService
           .getWeeklySummary(
+            coachId: widget.coachId,
             weekOffset: newOffset,
             asesoradosActivos: widget.summary.asesoradosActivos,
           )

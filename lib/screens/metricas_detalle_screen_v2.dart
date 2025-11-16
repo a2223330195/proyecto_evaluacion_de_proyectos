@@ -37,6 +37,10 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen> {
   MetricasBloc? _bloc;
   bool _ownsBloc = false;
 
+  // Cache para optimizar renderizado del gráfico
+  Map<String, String>? _titlesCache;
+  List<Medicion>? _cachedMediciones;
+
   @override
   void initState() {
     super.initState();
@@ -283,10 +287,17 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen> {
                       LineChartData(
                         gridData: FlGridData(show: true),
                         titlesData: FlTitlesData(
+                          topTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          rightTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
                           bottomTitles: AxisTitles(
                             sideTitles: SideTitles(
                               showTitles: true,
                               reservedSize: 60,
+                              interval: _calculateBottomTitleInterval(medicionesParaGrafico.length),
                               getTitlesWidget:
                                   (value, meta) => _buildBottomTitle(
                                     value,
@@ -386,6 +397,19 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen> {
     );
   }
 
+  /// Calcula el intervalo para mostrar etiquetas en el eje X
+  double _calculateBottomTitleInterval(int medicionesCount) {
+    if (medicionesCount <= 3) {
+      return 1;
+    } else if (medicionesCount <= 5) {
+      return 1;
+    } else if (medicionesCount <= 10) {
+      return (medicionesCount / 4).ceilToDouble();
+    } else {
+      return (medicionesCount / 5).ceilToDouble();
+    }
+  }
+
   Widget _buildBottomTitle(
     double value,
     TitleMeta meta,
@@ -394,6 +418,36 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen> {
     if (mediciones.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    // Si las mediciones cambiaron, limpiar cache
+    if (_cachedMediciones != mediciones) {
+      _cachedMediciones = mediciones;
+      _titlesCache = _buildTitlesCache(mediciones);
+    }
+
+    // Buscar en cache (O(1) en lugar de O(n))
+    final label = _titlesCache?[value.toStringAsFixed(0)] ?? '';
+    if (label.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Transform.rotate(
+        angle: -0.4,
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  /// Pre-calcula las etiquetas para optimizar renderizado
+  Map<String, String> _buildTitlesCache(List<Medicion> mediciones) {
+    final cache = <String, String>{};
+
+    if (mediciones.isEmpty) return cache;
 
     final points =
         mediciones
@@ -405,16 +459,19 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen> {
             )
             .toList();
 
+    // Limitar el número de etiquetas visibles en el eje X
     int labelCount;
     if (mediciones.length <= 3) {
       labelCount = mediciones.length;
-    } else if (mediciones.length <= 7) {
+    } else if (mediciones.length <= 5) {
+      labelCount = 3;
+    } else if (mediciones.length <= 10) {
       labelCount = 4;
     } else {
-      labelCount = 3;
+      labelCount = 5; // Máximo 5 etiquetas
     }
 
-    final indices = <int>[];
+    final indices = <int>{};
     if (labelCount > 1 && mediciones.length > 1) {
       final step = (mediciones.length - 1) / (labelCount - 1);
       for (int i = 0; i < labelCount; i++) {
@@ -427,26 +484,17 @@ class _MetricasDetalleScreenState extends State<MetricasDetalleScreen> {
       indices.add(mediciones.length - 1);
     }
 
-    for (int i = 0; i < points.length; i++) {
-      final medX = points[i].x;
-      if ((medX - value).abs() < 1e7 && indices.contains(i)) {
-        final label = DateFormat(
-          'dd/MM',
-        ).format(points[i].medicion.fechaMedicion);
-        return Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Transform.rotate(
-            angle: -0.4,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-            ),
-          ),
-        );
+    // Precalcular etiquetas solo para índices visibles
+    for (final i in indices) {
+      if (i < points.length) {
+        final x = points[i].x;
+        final label =
+            DateFormat('dd/MM').format(points[i].medicion.fechaMedicion);
+        cache[x.toStringAsFixed(0)] = label;
       }
     }
 
-    return const SizedBox.shrink();
+    return cache;
   }
 
   Widget _buildMedicionCard(Medicion medicion) {

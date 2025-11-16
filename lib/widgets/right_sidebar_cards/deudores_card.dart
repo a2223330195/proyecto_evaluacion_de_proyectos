@@ -76,6 +76,7 @@ class _DeudoresCardState extends State<DeudoresCard> {
               child: Center(child: Text('No hay pagos pendientes.')),
             )
           else
+            // ✅ Contenedor acotado con altura máxima para lazy loading
             SizedBox(
               height: 200,
               child: ListView.separated(

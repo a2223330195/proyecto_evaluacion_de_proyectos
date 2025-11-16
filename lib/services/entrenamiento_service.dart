@@ -6,6 +6,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mysql1/mysql1.dart';
 import 'package:coachhub/utils/app_error_handler.dart' show executeWithRetry;
 
 import 'package:coachhub/models/asignacion_model.dart';
@@ -283,9 +284,10 @@ class EntrenamientoService {
   // ============================================================================
 
   /// Crea un lote (batch) de asignaciones de rutina para múltiples días
-  /// Realiza una "transacción lógica": primero crea el batch, luego las asignaciones individuales
+  /// Realiza una transacción atómica: si algo falla, se revierten todos los INSERTs
   /// FASE J: Captura snapshot de ejercicios en cada asignación para desacoplar plan del registro
   /// Retorna el ID del nuevo batch creado
+  /// 🔧 CORRECCIÓN #2: Envuelto en transacción nativa para garantizar consistencia
   /// 🛡️ MÓDULO 4: Con retry logic automático
   Future<int> createBatch({
     required int asesoradoId,
@@ -308,56 +310,113 @@ class EntrenamientoService {
       final endDateFormatted =
           endDate != null ? _dateFormatter.format(_normalize(endDate)) : null;
 
-      final batchInsert = await _db.query(
-        'INSERT INTO rutina_batches (asesorado_id, rutina_id, start_date, end_date, default_time, notes) VALUES (?, ?, ?, ?, ?, ?)',
-        [
-          asesoradoId,
-          rutinaId,
-          startDateFormatted,
-          endDateFormatted,
-          defaultTimeFormatted,
-          notes,
-        ],
-      );
+      // Obtener conexión para usar transacción explícita
+      final connection = await _db.connection;
 
-      final batchId = batchInsert.insertId;
-      if (batchId == null) {
-        throw StateError(
-          'No se pudo obtener el identificador del lote creado.',
-        );
-      }
+      int batchId = 0;
 
-      // FASE J: Obtener ejercicios de la plantilla UNA VEZ para capturar snapshot
-      final ejercicios = await getEjerciciosDePlantilla(rutinaId);
+      try {
+        // Iniciar transacción explícita
+        await connection.query('START TRANSACTION');
 
-      for (final entry in enabledAssignments) {
-        final dateFormatted = _dateFormatter.format(_normalize(entry.date));
-        final timeFormatted = _formatTime(entry.time) ?? defaultTimeFormatted;
-        final mergedNotes =
-            entry.notes?.trim().isNotEmpty == true ? entry.notes : notes;
-
-        final asignacionInsert = await _db.query(
-          'INSERT INTO asignaciones_agenda (asesorado_id, plantilla_id, batch_id, fecha_asignada, hora_asignada, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        // Insertar el batch
+        final batchInsert = await connection.query(
+          'INSERT INTO rutina_batches (asesorado_id, rutina_id, start_date, end_date, default_time, notes) VALUES (?, ?, ?, ?, ?, ?)',
           [
             asesoradoId,
             rutinaId,
-            batchId,
-            dateFormatted,
-            timeFormatted,
-            'pendiente',
-            mergedNotes,
+            startDateFormatted,
+            endDateFormatted,
+            defaultTimeFormatted,
+            notes,
           ],
         );
 
-        final asignacionId = asignacionInsert.insertId;
-        if (asignacionId != null) {
-          // FASE J: Capturar snapshot de ejercicios para esta asignación
-          await _crearSnapshotEjercicios(asignacionId, ejercicios);
+        batchId = batchInsert.insertId ?? 0;
+        if (batchId == 0) {
+          throw StateError(
+            'No se pudo obtener el identificador del lote creado.',
+          );
         }
-      }
 
-      return batchId;
+        // FASE J: Obtener ejercicios de la plantilla UNA VEZ para capturar snapshot
+        final ejercicios = await getEjerciciosDePlantilla(rutinaId);
+
+        // Insertar asignaciones y snapshots dentro de la transacción
+        for (final entry in enabledAssignments) {
+          final dateFormatted = _dateFormatter.format(_normalize(entry.date));
+          final timeFormatted = _formatTime(entry.time) ?? defaultTimeFormatted;
+          final mergedNotes =
+              entry.notes?.trim().isNotEmpty == true ? entry.notes : notes;
+
+          final asignacionInsert = await connection.query(
+            'INSERT INTO asignaciones_agenda (asesorado_id, plantilla_id, batch_id, fecha_asignada, hora_asignada, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [
+              asesoradoId,
+              rutinaId,
+              batchId,
+              dateFormatted,
+              timeFormatted,
+              'pendiente',
+              mergedNotes,
+            ],
+          );
+
+          final asignacionId = asignacionInsert.insertId;
+          if (asignacionId != null) {
+            // FASE J: Capturar snapshot de ejercicios para esta asignación
+            // Usando connection para que participe en la transacción
+            await _crearSnapshotEjerciciosConConnection(
+              asignacionId,
+              ejercicios,
+              connection,
+            );
+          }
+        }
+
+        // Commit si todo fue bien
+        await connection.query('COMMIT');
+
+        return batchId;
+      } catch (e) {
+        // Rollback en caso de error
+        try {
+          await connection.query('ROLLBACK');
+        } catch (_) {
+          // Ignorar error en rollback
+        }
+        rethrow;
+      }
     }, operationName: 'createBatch');
+  }
+
+  /// Versión de _crearSnapshotEjercicios que usa una conexión específica
+  /// Utilizada dentro de transacciones explícitas en createBatch
+  Future<void> _crearSnapshotEjerciciosConConnection(
+    int asignacionId,
+    List<Ejercicio> ejercicios,
+    MySqlConnection connection,
+  ) async {
+    for (final ejercicio in ejercicios) {
+      await connection.query(
+        '''
+        INSERT INTO log_ejercicios 
+        (asignacion_id, ejercicio_maestro_id, orden, series_planificadas, 
+         reps_planificados, carga_planificada, descanso_planificado, notas_planificadas)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        [
+          asignacionId,
+          ejercicio.ejercicioMaestroId,
+          ejercicio.orden,
+          ejercicio.series,
+          ejercicio.repeticiones,
+          ejercicio.indicadorCarga,
+          ejercicio.descanso,
+          ejercicio.notas,
+        ],
+      );
+    }
   }
 
   /// Cancela una asignación individual sin afectar el lote completo
@@ -467,32 +526,6 @@ class EntrenamientoService {
   /// para desacoplar el PLAN del REGISTRO
   ///
   /// Cuando se modifique la plantilla después, esto no afecta el historial
-  Future<void> _crearSnapshotEjercicios(
-    int asignacionId,
-    List<Ejercicio> ejercicios,
-  ) async {
-    for (final ejercicio in ejercicios) {
-      await _db.query(
-        '''
-        INSERT INTO log_ejercicios 
-        (asignacion_id, ejercicio_maestro_id, orden, series_planificadas, 
-         reps_planificados, carga_planificada, descanso_planificado, notas_planificadas)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''',
-        [
-          asignacionId,
-          ejercicio.ejercicioMaestroId,
-          ejercicio.orden,
-          ejercicio.series,
-          ejercicio.repeticiones,
-          ejercicio.indicadorCarga,
-          ejercicio.descanso,
-          ejercicio.notas,
-        ],
-      );
-    }
-  }
-
   /// FASE J: Obtiene todos los ejercicios snapshot de una asignación
   /// Lee de log_ejercicios para mostrar el plan ORIGINAL (no cambios posteriores)
   /// Incluye JOIN con ejercicios_maestro para información del ejercicio

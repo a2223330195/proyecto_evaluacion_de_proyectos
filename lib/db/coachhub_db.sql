@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS asesorados (
     status ENUM('activo', 'enPausa', 'deudor') NOT NULL DEFAULT 'activo',
     plan_id INT NULL,
     fecha_vencimiento DATE NULL,
-    edad INT NULL CHECK (edad >= 1 AND edad <= 120),
+    fecha_nacimiento DATE NULL,
     sexo ENUM('Masculino', 'Femenino', 'Otro', 'NoEspecifica') NULL,
     altura_cm DECIMAL(5,2) NULL CHECK (altura_cm >= 50 AND altura_cm <= 250),
     telefono VARCHAR(20) NULL,
@@ -301,6 +301,7 @@ DELIMITER ;
 CALL CreateIndexIfNotExists('asesorados', 'idx_asesorado_nombre', 'nombre');
 CALL CreateIndexIfNotExists('asesorados', 'idx_asesorados_status', 'status');
 CALL CreateIndexIfNotExists('asesorados', 'idx_asesorados_plan_status', 'plan_id, status');
+CALL CreateIndexIfNotExists('asesorados', 'idx_asesorados_fecha_nacimiento', 'fecha_nacimiento');
 
 CALL CreateIndexIfNotExists('asignaciones_agenda', 'idx_agenda_fecha', 'fecha_asignada');
 CALL CreateIndexIfNotExists('asignaciones_agenda', 'idx_asignaciones_asesorado_fecha', 'asesorado_id, fecha_asignada');

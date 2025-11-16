@@ -1,5 +1,6 @@
 // lib/widgets/dialogs/schedule_routine_dialog.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -54,12 +55,12 @@ class _EditableDayAssignment {
 class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
   final _assignmentService = EntrenamientoService();
   final _notesController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
 
   List<Asesorado> _asesorados = [];
   List<Rutina> _rutinas = [];
   Asesorado? _selectedAsesorado;
   Rutina? _selectedRutina;
-  final _rutinaSearchController = TextEditingController();
   FocusNode? _rutinaFocusNode;
 
   bool _isLoading = true;
@@ -92,41 +93,96 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
   @override
   void dispose() {
     _notesController.dispose();
-    _rutinaSearchController.dispose();
+
+    // ⚠️ NO DISPOSE _rutinaFocusNode: Es creado y manejado por Autocomplete internamente.
+    // Disposerlo aquí causa "FocusNode was used after being disposed" en el siguiente rebuild.
+    // Solo lo nullificamos para limpiar la referencia.
+    _rutinaFocusNode = null;
+
     super.dispose();
   }
 
   Future<void> _loadData() async {
-    final db = DatabaseConnection.instance;
+    try {
+      final db = DatabaseConnection.instance;
 
-    final asesoradosFuture = db.query(
-      'SELECT id, nombre, avatar_url, status, plan_id, fecha_vencimiento, edad, sexo, altura_cm, telefono, fecha_inicio_programa, objetivo_principal, objetivo_secundario FROM asesorados ORDER BY nombre',
-    );
-    final rutinasFuture = db.query(
-      'SELECT id, nombre, descripcion, categoria FROM rutinas_plantillas ORDER BY nombre',
-    );
+      final asesoradosFuture = db.query(
+        'SELECT id, nombre, avatar_url, status, plan_id, fecha_vencimiento, fecha_nacimiento, sexo, altura_cm, telefono, fecha_inicio_programa, objetivo_principal, objetivo_secundario FROM asesorados ORDER BY nombre',
+      );
+      final rutinasFuture = db.query(
+        'SELECT id, nombre, descripcion, categoria FROM rutinas_plantillas ORDER BY nombre',
+      );
 
-    final results = await Future.wait([asesoradosFuture, rutinasFuture]);
+      // Implementar timeout de 15 segundos para la carga inicial
+      final results = await Future.wait([
+        asesoradosFuture,
+        rutinasFuture,
+      ]).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw TimeoutException(
+            'La carga de datos tardó demasiado (>15s). Verifica tu conexión.',
+          );
+        },
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    final loadedAsesorados =
-        results[0].map((row) => Asesorado.fromMap(row.fields)).toList();
-    final loadedRutinas =
-        results[1].map((row) => Rutina.fromMap(row.fields)).toList();
+      final loadedAsesorados =
+          results[0].map((row) => Asesorado.fromMap(row.fields)).toList();
+      final loadedRutinas =
+          results[1].map((row) => Rutina.fromMap(row.fields)).toList();
 
-    setState(() {
-      _asesorados = loadedAsesorados;
-      _rutinas = loadedRutinas;
-      _selectedAsesorado = _resolveInitialAsesorado(loadedAsesorados);
-      _selectedRutina = _resolveInitialRutina(loadedRutinas);
-      if (_selectedRutina != null) {
-        _rutinaSearchController.text = _selectedRutina!.nombre;
-      }
-      _isLoading = false;
-    });
+      setState(() {
+        _asesorados = loadedAsesorados;
+        _rutinas = loadedRutinas;
+        _selectedAsesorado = _resolveInitialAsesorado(loadedAsesorados);
+        _selectedRutina = _resolveInitialRutina(loadedRutinas);
+        _isLoading = false;
+      });
 
-    _regenerateEntries(preserveExisting: false);
+      _regenerateEntries(preserveExisting: false);
+    } on TimeoutException catch (e) {
+      if (!mounted) return;
+
+      // Mostrar error específico de timeout
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⏱️ ${e.message}'),
+          backgroundColor: Colors.orange[700],
+          action: SnackBarAction(
+            label: 'Reintentar',
+            textColor: Colors.white,
+            onPressed: _loadData,
+          ),
+          duration: const Duration(seconds: 7),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      // Mostrar error general y permitir retry
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar datos: $e'),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'Reintentar',
+            textColor: Colors.white,
+            onPressed: _loadData, // Llamar _loadData nuevamente
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   Asesorado? _resolveInitialAsesorado(List<Asesorado> items) {
@@ -163,7 +219,7 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
 
     final Map<DateTime, _EditableDayAssignment> previousEntries =
         preserveExisting ? Map.from(_entries) : {};
-    _entries.clear();
+    final newEntries = <DateTime, _EditableDayAssignment>{};
 
     DateTime current = start;
     while (!current.isAfter(end)) {
@@ -172,13 +228,20 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
           _selectedWeekdays.contains(current.weekday);
       if (matchesWeekday) {
         final existing = previousEntries[_normalize(current)];
-        _entries[_normalize(current)] =
+        newEntries[_normalize(current)] =
             existing ??
             _EditableDayAssignment(date: current, time: _defaultTime);
       }
       current = current.add(const Duration(days: 1));
     }
-    setState(() {});
+
+    // ✅ OPTIMIZACIÓN: Solo hacer setState si las entries cambieron
+    if (newEntries.length != _entries.length ||
+        !newEntries.keys.every((key) => _entries.containsKey(key))) {
+      _entries.clear();
+      _entries.addAll(newEntries);
+      setState(() {});
+    }
   }
 
   DateTime _normalize(DateTime date) =>
@@ -235,7 +298,10 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
   void _toggleWeekday(int weekday) {
     setState(() {
       if (_selectedWeekdays.contains(weekday)) {
-        _selectedWeekdays.remove(weekday);
+        // ✅ VALIDACIÓN: Evitar que se deseleccionen TODOS los días
+        if (_selectedWeekdays.length > 1) {
+          _selectedWeekdays.remove(weekday);
+        }
       } else {
         _selectedWeekdays.add(weekday);
       }
@@ -257,6 +323,19 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
   }
 
   Future<void> _submit() async {
+    final formState = _formKey.currentState;
+
+    // ✅ Validar el formulario antes de proceder
+    if (formState != null && !formState.validate()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor, corrija los errores en el formulario.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     if (_selectedAsesorado == null || _selectedRutina == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona asesorado y rutina.')),
@@ -333,54 +412,58 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
           child:
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Programar rutina',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildSelectors(),
-                      const SizedBox(height: 16),
-                      _buildRangeAndWeekdays(),
-                      const SizedBox(height: 16),
-                      _buildAssignmentsList(),
-                      const SizedBox(height: 16),
-                      _buildNotesField(),
-                      const SizedBox(height: 24),
-                      Align(
-                        alignment: Alignment.bottomRight,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton(
-                              onPressed:
-                                  _isSubmitting
-                                      ? null
-                                      : () => Navigator.of(context).pop(false),
-                              child: const Text('Cancelar'),
-                            ),
-                            const SizedBox(width: 12),
-                            FilledButton.icon(
-                              onPressed: _isSubmitting ? null : _submit,
-                              icon:
-                                  _isSubmitting
-                                      ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                      : const Icon(Icons.check),
-                              label: const Text('Asignar'),
-                            ),
-                          ],
+                  : Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Programar rutina',
+                          style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 16),
+                        _buildSelectors(),
+                        const SizedBox(height: 16),
+                        _buildRangeAndWeekdays(),
+                        const SizedBox(height: 16),
+                        _buildAssignmentsList(),
+                        const SizedBox(height: 16),
+                        _buildNotesField(),
+                        const SizedBox(height: 24),
+                        Align(
+                          alignment: Alignment.bottomRight,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed:
+                                    _isSubmitting
+                                        ? null
+                                        : () =>
+                                            Navigator.of(context).pop(false),
+                                child: const Text('Cancelar'),
+                              ),
+                              const SizedBox(width: 12),
+                              FilledButton.icon(
+                                onPressed: _isSubmitting ? null : _submit,
+                                icon:
+                                    _isSubmitting
+                                        ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                        : const Icon(Icons.check),
+                                label: const Text('Asignar'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
         ),
       ),
@@ -445,7 +528,6 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
           onSelected: (Rutina selection) {
             setState(() {
               _selectedRutina = selection;
-              _rutinaSearchController.text = selection.nombre;
             });
             // ✅ Cerrar el dropdown desfocalizando después de la selección
             Future.microtask(() {
@@ -460,14 +542,6 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
           ) {
             // ✅ Guardar referencia del FocusNode para usarlo en onSelected
             _rutinaFocusNode = focusNode;
-
-            // Sincronizar solo cuando se selecciona, no en cada rebuild
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_selectedRutina != null &&
-                  textEditingController.text != _selectedRutina!.nombre) {
-                textEditingController.text = _selectedRutina!.nombre;
-              }
-            });
 
             return TextFormField(
               controller: textEditingController,
@@ -565,10 +639,13 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
               weekday <= DateTime.sunday;
               weekday++
             )
-              FilterChip(
-                label: Text(_weekdayLabel(weekday)),
-                selected: _selectedWeekdays.contains(weekday),
-                onSelected: (_) => _toggleWeekday(weekday),
+              Tooltip(
+                message: 'Debe seleccionar al menos un día',
+                child: FilterChip(
+                  label: Text(_weekdayLabel(weekday)),
+                  selected: _selectedWeekdays.contains(weekday),
+                  onSelected: (_) => _toggleWeekday(weekday),
+                ),
               ),
           ],
         ),
@@ -674,13 +751,21 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
   }
 
   Widget _buildNotesField() {
-    return TextField(
+    return TextFormField(
       controller: _notesController,
       maxLines: 2,
       decoration: const InputDecoration(
         labelText: 'Nota general (opcional)',
         border: OutlineInputBorder(),
+        hintText: 'Agregar notas adicionales para la rutina...',
       ),
+      validator: (value) {
+        // Validación: Las notas son opcionales, pero si se proporcionan no deben ser solo espacios
+        if (value != null && value.trim().isNotEmpty && value.length > 500) {
+          return 'La nota no puede exceder 500 caracteres';
+        }
+        return null;
+      },
     );
   }
 

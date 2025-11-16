@@ -7,6 +7,7 @@ class AgendaSession extends Equatable {
   final String horaAsignada;
   final int asesoradoId;
   final String asesoradoNombre;
+  final String asesoradoAvatarUrl;
   final String rutinaNombre;
 
   const AgendaSession({
@@ -15,6 +16,7 @@ class AgendaSession extends Equatable {
     required this.horaAsignada,
     required this.asesoradoId,
     required this.asesoradoNombre,
+    required this.asesoradoAvatarUrl,
     required this.rutinaNombre,
   });
 
@@ -25,6 +27,7 @@ class AgendaSession extends Equatable {
     String? horaAsignada,
     int? asesoradoId,
     String? asesoradoNombre,
+    String? asesoradoAvatarUrl,
     String? rutinaNombre,
   }) {
     return AgendaSession(
@@ -33,6 +36,7 @@ class AgendaSession extends Equatable {
       horaAsignada: horaAsignada ?? this.horaAsignada,
       asesoradoId: asesoradoId ?? this.asesoradoId,
       asesoradoNombre: asesoradoNombre ?? this.asesoradoNombre,
+      asesoradoAvatarUrl: asesoradoAvatarUrl ?? this.asesoradoAvatarUrl,
       rutinaNombre: rutinaNombre ?? this.rutinaNombre,
     );
   }
@@ -44,6 +48,7 @@ class AgendaSession extends Equatable {
     horaAsignada,
     asesoradoId,
     asesoradoNombre,
+    asesoradoAvatarUrl,
     rutinaNombre,
   ];
 }

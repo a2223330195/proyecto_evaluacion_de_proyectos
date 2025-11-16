@@ -160,7 +160,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              icon: const Icon(Icons.image),
+              icon: const Icon(Icons.image, color: Colors.white),
               label: Text(
                 _profilePicture != null ? 'Cambiar Foto' : 'Seleccionar Foto',
               ),

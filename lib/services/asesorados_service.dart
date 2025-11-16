@@ -135,7 +135,7 @@ class AsesoradosService {
       // ✅ PASO 2: INSERTAR ÚNICO EN BD con la ruta de imagen lista
       // Si llegamos aquí, la imagen ya está guardada (o no hay imagen)
       const insertSql =
-          'INSERT INTO asesorados (nombre, avatar_url, plan_id, fecha_vencimiento, status, edad, sexo, altura_cm, telefono, fecha_inicio_programa, objetivo_principal, objetivo_secundario, coach_id) '
+          'INSERT INTO asesorados (nombre, avatar_url, plan_id, fecha_vencimiento, status, fecha_nacimiento, sexo, altura_cm, telefono, fecha_inicio_programa, objetivo_principal, objetivo_secundario, coach_id) '
           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
 
       await _db.query(insertSql, [
@@ -144,7 +144,7 @@ class AsesoradosService {
         data.planId,
         data.dueDate?.toUtc(),
         data.status.name,
-        data.edad,
+        data.fechaNacimiento?.toUtc(),
         data.sexo,
         data.alturaCm,
         data.telefono?.replaceAll(RegExp(r'\D'), ''),
@@ -222,7 +222,7 @@ class AsesoradosService {
       }
 
       const updateSql =
-          'UPDATE asesorados SET nombre = ?, avatar_url = ?, plan_id = ?, fecha_vencimiento = ?, status = ?, edad = ?, sexo = ?, altura_cm = ?, telefono = ?, fecha_inicio_programa = ?, objetivo_principal = ?, objetivo_secundario = ? WHERE id = ?';
+          'UPDATE asesorados SET nombre = ?, avatar_url = ?, plan_id = ?, fecha_vencimiento = ?, status = ?, fecha_nacimiento = ?, sexo = ?, altura_cm = ?, telefono = ?, fecha_inicio_programa = ?, objetivo_principal = ?, objetivo_secundario = ? WHERE id = ?';
 
       await _db.query(updateSql, [
         data.name,
@@ -230,7 +230,7 @@ class AsesoradosService {
         data.planId,
         data.dueDate?.toUtc(),
         data.status.name,
-        data.edad,
+        data.fechaNacimiento?.toUtc(),
         data.sexo,
         data.alturaCm,
         data.telefono?.replaceAll(RegExp(r'\D'), ''),

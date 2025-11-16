@@ -94,9 +94,10 @@ class QuickAccessCard extends StatelessWidget {
         onPressed: onPressed,
       );
     } else {
+      // ✅ Usar los parámetros dinámicos en lugar de valores hardcodeados
       return ElevatedButton.icon(
-        icon: const Icon(Icons.add_circle_outline),
-        label: const Text('Crear Plantilla'),
+        icon: Icon(icon),
+        label: Text(label),
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,

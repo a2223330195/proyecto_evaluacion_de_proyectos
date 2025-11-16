@@ -109,7 +109,8 @@ class PagosPendientesBloc
         return;
       }
 
-      await _pagosService.registrarAbono(
+      // ✅ Usar método unificado registrarPago()
+      await _pagosService.registrarPago(
         asesoradoId: event.asesoradoId,
         monto: event.monto,
         nota: event.nota,
@@ -147,7 +148,7 @@ class PagosPendientesBloc
         return;
       }
 
-      await _pagosService.completarPago(
+      await _pagosService.registrarPago(
         asesoradoId: event.asesoradoId,
         monto: event.monto,
         nota: event.nota,
@@ -173,6 +174,7 @@ class PagosPendientesBloc
     Emitter<PagosPendientesState> emit,
   ) async {
     _currentFiltro = _normalizeFiltro(event.estado);
+    _currentPage = 1; // Reset a primera página al cambiar filtro
 
     if (state is! PagosPendientesLoaded) {
       add(
@@ -198,10 +200,17 @@ class PagosPendientesBloc
       (sum, a) => sum + a.montoPendiente,
     );
 
+    // ✅ MEJORA: Recalcular totalCount correctamente basado en filtrados
+    final newTotalCount = filtered.length;
+    final totalPages =
+        newTotalCount == 0 ? 1 : (newTotalCount / _pageSize).ceil();
+
     emit(
       currentState.copyWith(
         asesoradosConPago: filtered,
-        totalCount: filtered.length,
+        totalCount: newTotalCount,
+        totalPages: totalPages,
+        currentPage: 1,
         filtroEstado: _currentFiltro,
         totalMontoPendiente: totalMonto,
       ),
@@ -213,6 +222,7 @@ class PagosPendientesBloc
     Emitter<PagosPendientesState> emit,
   ) async {
     _currentQuery = event.query.trim();
+    _currentPage = 1; // Reset a primera página al cambiar búsqueda
 
     if (state is! PagosPendientesLoaded) {
       add(
@@ -226,26 +236,84 @@ class PagosPendientesBloc
       return;
     }
 
-    final currentState = state as PagosPendientesLoaded;
-    final filtered = _aplicarFiltros(
-      currentState.allAsesorados,
-      filtro: _currentFiltro,
-      query: _currentQuery,
-    );
+    // ✅ MEJORA: Si la búsqueda está activa, usar endpoint especializado
+    // que carga TODOS los asesorados relevantes antes de filtrar
+    if (_currentQuery.isNotEmpty) {
+      try {
+        emit(const PagosPendientesLoading());
 
-    final totalMonto = filtered.fold<double>(
-      0,
-      (sum, a) => sum + a.montoPendiente,
-    );
+        // Cargar TODOS los asesorados con pagos pendientes (sin paginación)
+        final allAsesorados = await _pagosService
+            .buscarAsesoradosConPagosPendientes(_coachId, _currentQuery);
 
-    emit(
-      currentState.copyWith(
-        asesoradosConPago: filtered,
-        searchQuery: _currentQuery.isEmpty ? null : _currentQuery,
-        totalCount: filtered.length,
-        totalMontoPendiente: totalMonto,
-      ),
-    );
+        // Obtener saldos actualizados
+        final asesoradosConEstado = await _actualizarSaldoConEstado(
+          allAsesorados,
+        );
+
+        // Aplicar filtro de estado si existe
+        final filtered = _aplicarFiltros(
+          asesoradosConEstado,
+          filtro: _currentFiltro,
+          query: _currentQuery,
+        );
+
+        final totalMonto = filtered.fold<double>(
+          0,
+          (sum, a) => sum + a.montoPendiente,
+        );
+
+        emit(
+          PagosPendientesLoaded(
+            asesoradosConPago: filtered,
+            allAsesorados: asesoradosConEstado,
+            currentPage: 1,
+            totalPages: 1,
+            totalCount: filtered.length,
+            filtroEstado: _currentFiltro,
+            searchQuery: _currentQuery.isEmpty ? null : _currentQuery,
+            totalMontoPendiente: totalMonto,
+          ),
+        );
+
+        if (kDebugMode) {
+          debugPrint(
+            '[PagosPendientesBloc] Búsqueda completada: encontrados ${filtered.length} asesorados con query="$_currentQuery"',
+          );
+        }
+      } catch (e) {
+        emit(PagosPendientesError('Error buscando asesorados: $e'));
+      }
+    } else {
+      // Sin búsqueda, usar el filtro local sobre la página actual
+      final currentState = state as PagosPendientesLoaded;
+      final filtered = _aplicarFiltros(
+        currentState.allAsesorados,
+        filtro: _currentFiltro,
+        query: _currentQuery,
+      );
+
+      final totalMonto = filtered.fold<double>(
+        0,
+        (sum, a) => sum + a.montoPendiente,
+      );
+
+      // ✅ MEJORA: Recalcular totalCount correctamente basado en búsqueda
+      final newTotalCount = filtered.length;
+      final totalPages =
+          newTotalCount == 0 ? 1 : (newTotalCount / _pageSize).ceil();
+
+      emit(
+        currentState.copyWith(
+          asesoradosConPago: filtered,
+          searchQuery: _currentQuery.isEmpty ? null : _currentQuery,
+          totalCount: newTotalCount,
+          totalPages: totalPages,
+          currentPage: 1,
+          totalMontoPendiente: totalMonto,
+        ),
+      );
+    }
   }
 
   Future<void> _onCambiarPaginaPagosPendientes(
@@ -375,13 +443,17 @@ class PagosPendientesBloc
       return estadoActual;
     }
 
+    // ✅ ACTUALIZADO: sin_vencimiento ya no existe (se auto-asigna fecha)
     switch (nuevoEstado) {
-      case 'deudor':
-        return 'atrasado';
-      case 'proximo':
-        return 'proximo';
-      case 'pendiente':
+      case 'sin_plan':
         return 'pendiente';
+      case 'vencido':
+        return 'atrasado';
+      case 'proximo_vencimiento':
+        return 'proximo';
+      case 'activo':
+      case 'pagado':
+        return 'pendiente'; // Ambos son "sin mora"
       default:
         return estadoActual;
     }

@@ -3,7 +3,7 @@ import 'package:coachhub/blocs/asesorados/asesorados_event.dart';
 import 'package:coachhub/blocs/asesorados/asesorados_state.dart';
 import 'package:coachhub/screens/ficha_asesorado_screen.dart';
 import 'package:coachhub/screens/nuevo_asesorado_screen.dart';
-import 'package:coachhub/services/db_connection.dart';
+import 'package:coachhub/services/asesorados_service.dart';
 import 'package:coachhub/widgets/dialogs/schedule_routine_dialog.dart';
 import 'package:coachhub/widgets/optimized_cached_image.dart';
 import 'package:coachhub/widgets/skeleton_loaders/asesorado_skeleton.dart';
@@ -64,7 +64,7 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
               AsesoradosBloc()
                 ..add(LoadAsesorados(1, widget.coachId, '', null)),
       child: Builder(
-        builder: (providerContext) => _buildScaffold(providerContext),
+        builder: (builderContext) => _buildScaffold(builderContext),
       ),
     );
   }
@@ -185,13 +185,47 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
       listener: (context, state) {
         if (state is AsesoradoDeleted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Asesorado eliminado correctamente.')),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Asesorado eliminado correctamente.',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.green.shade600,
+              duration: const Duration(seconds: 2),
+            ),
           );
         }
         if (state is AsesoradosError) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error: ${state.message}')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Error: ${state.message}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red.shade600,
+              duration: const Duration(seconds: 3),
+            ),
+          );
         }
       },
       child: BlocBuilder<AsesoradosBloc, AsesoradosState>(
@@ -541,8 +575,6 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
     Asesorado asesorado,
   ) async {
     final bool willPause = asesorado.status != AsesoradoStatus.enPausa;
-    final newStatus =
-        willPause ? AsesoradoStatus.enPausa : AsesoradoStatus.activo;
     final actionText = willPause ? 'pausar' : 'reanudar';
 
     final confirmed = await showDialog<bool>(
@@ -570,31 +602,62 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
       return;
     }
 
+    // ignore: use_build_context_synchronously
+    final scaffold = ScaffoldMessenger.of(context);
+    final mounted = this.mounted;
+
     try {
-      final db = DatabaseConnection.instance;
-      await db.query('UPDATE asesorados SET status = ? WHERE id = ?', [
-        newStatus.name,
-        asesorado.id,
-      ]);
+      final service = AsesoradosService();
+      final updatedAsesorado = asesorado.copyWith(
+        status: willPause ? AsesoradoStatus.enPausa : AsesoradoStatus.activo,
+      );
+
+      await service.updateAsesorado(id: asesorado.id, data: updatedAsesorado);
 
       if (!mounted) return;
 
-      final messenger = ScaffoldMessenger.of(this.context);
-      messenger.showSnackBar(
+      scaffold.showSnackBar(
         SnackBar(
-          content: Text(
-            'Asesorado "${asesorado.name}" ha sido ${actionText}do.',
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Asesorado "${asesorado.name}" ha sido ${actionText}do.',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
+          backgroundColor: Colors.green.shade600,
+          duration: const Duration(seconds: 2),
         ),
       );
-      _reloadAsesorados(this.context);
+      // ignore: use_build_context_synchronously
+      _reloadAsesorados(context);
     } catch (e) {
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(this.context);
-      messenger.showSnackBar(
+      scaffold.showSnackBar(
         SnackBar(
-          content: Text('Error al actualizar: $e'),
-          backgroundColor: AppColors.warning,
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Error al actualizar: $e',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red.shade600,
+          duration: const Duration(seconds: 3),
         ),
       );
     }

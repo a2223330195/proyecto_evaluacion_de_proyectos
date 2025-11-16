@@ -11,7 +11,7 @@ class Asesorado {
   final int? planId;
   final String? planName;
   final DateTime? dueDate;
-  final int? edad;
+  final DateTime? fechaNacimiento;
   final String? sexo;
   final double? alturaCm;
   final String? telefono;
@@ -28,7 +28,7 @@ class Asesorado {
     this.planId,
     this.planName,
     this.dueDate,
-    this.edad,
+    this.fechaNacimiento,
     this.sexo,
     this.alturaCm,
     this.telefono,
@@ -37,9 +37,23 @@ class Asesorado {
     this.objetivoSecundario,
   });
 
+  /// Getter que calcula dinámicamente la edad desde la fecha de nacimiento
+  int? get edad {
+    if (fechaNacimiento == null) return null;
+    final now = DateTime.now();
+    int calculatedAge = now.year - fechaNacimiento!.year;
+    if (now.month < fechaNacimiento!.month ||
+        (now.month == fechaNacimiento!.month &&
+            now.day < fechaNacimiento!.day)) {
+      calculatedAge--;
+    }
+    return calculatedAge;
+  }
+
   factory Asesorado.fromMap(Map<String, dynamic> map) {
     final fechaVencimiento = map['fecha_vencimiento'];
     final fechaInicio = map['fecha_inicio_programa'];
+    final fechaNacimientoStr = map['fecha_nacimiento'];
 
     DateTime? dueDateParsed;
     if (fechaVencimiento != null) {
@@ -49,6 +63,11 @@ class Asesorado {
     DateTime? fechaInicioParsed;
     if (fechaInicio != null) {
       fechaInicioParsed = DateTime.tryParse(fechaInicio.toString());
+    }
+
+    DateTime? fechaNacimientoParsed;
+    if (fechaNacimientoStr != null) {
+      fechaNacimientoParsed = DateTime.tryParse(fechaNacimientoStr.toString());
     }
 
     return Asesorado(
@@ -69,7 +88,7 @@ class Asesorado {
               : null,
       planName: map['plan_nombre']?.toString(),
       dueDate: dueDateParsed,
-      edad: map['edad'] != null ? int.tryParse(map['edad'].toString()) : null,
+      fechaNacimiento: fechaNacimientoParsed,
       sexo: map['sexo']?.toString(),
       alturaCm:
           map['altura_cm'] != null
@@ -90,7 +109,7 @@ class Asesorado {
     int? planId,
     String? planName,
     DateTime? dueDate,
-    int? edad,
+    DateTime? fechaNacimiento,
     String? sexo,
     double? alturaCm,
     String? telefono,
@@ -107,7 +126,7 @@ class Asesorado {
       planId: planId ?? this.planId,
       planName: planName ?? this.planName,
       dueDate: dueDate ?? this.dueDate,
-      edad: edad ?? this.edad,
+      fechaNacimiento: fechaNacimiento ?? this.fechaNacimiento,
       sexo: sexo ?? this.sexo,
       alturaCm: alturaCm ?? this.alturaCm,
       telefono: telefono ?? this.telefono,

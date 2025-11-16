@@ -41,15 +41,17 @@ class RecentActivityCard extends StatelessWidget {
           if (activities.isEmpty)
             const Center(child: Text('No hay actividad reciente.'))
           else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: activities.length,
-              separatorBuilder: (context, index) => const Divider(),
-              itemBuilder: (context, index) {
-                final activity = activities[index];
-                return _buildActivityItem(activity);
-              },
+            // ✅ Contenedor acotado con altura máxima para evitar congelamiento
+            SizedBox(
+              height: 300,
+              child: ListView.separated(
+                itemCount: activities.length,
+                separatorBuilder: (context, index) => const Divider(),
+                itemBuilder: (context, index) {
+                  final activity = activities[index];
+                  return _buildActivityItem(activity);
+                },
+              ),
             ),
         ],
       ),

@@ -22,6 +22,40 @@ class FormValidators {
     return null;
   }
 
+  // Validar fecha de nacimiento
+  static String? validateFechaNacimiento(String? value) {
+    if (value == null || value.isEmpty) {
+      return null; // Opcional
+    }
+
+    try {
+      final fechaNacimiento = DateTime.parse(value);
+      final ahora = DateTime.now();
+
+      // Validar que no sea una fecha futura
+      if (fechaNacimiento.isAfter(ahora)) {
+        return 'La fecha de nacimiento no puede ser futura';
+      }
+
+      // Calcular la edad
+      int edad = ahora.year - fechaNacimiento.year;
+      if (ahora.month < fechaNacimiento.month ||
+          (ahora.month == fechaNacimiento.month &&
+              ahora.day < fechaNacimiento.day)) {
+        edad--;
+      }
+
+      // Validar que la edad esté entre 1 y 120 años
+      if (edad < 1 || edad > 120) {
+        return 'La edad calculada debe estar entre 1 y 120 años';
+      }
+
+      return null;
+    } catch (e) {
+      return 'Fecha de nacimiento inválida';
+    }
+  }
+
   // Validar edad (0-120)
   static String? validateEdad(String? value) {
     if (value == null || value.isEmpty) {

@@ -362,6 +362,11 @@ class _FichaAsesoradoScreenState extends State<FichaAsesoradoScreen>
                   'Edad',
                   asesorado.edad != null ? '${asesorado.edad} años' : 'N/A',
                 ),
+                if (asesorado.fechaNacimiento != null)
+                  _buildInfoRow(
+                    'Fecha de Nacimiento',
+                    DateFormat('dd/MM/yyyy').format(asesorado.fechaNacimiento!),
+                  ),
                 _buildInfoRow('Sexo', asesorado.sexo ?? 'N/A'),
                 _buildInfoRow('Altura', altura),
                 _buildInfoRow('Teléfono', telefono),

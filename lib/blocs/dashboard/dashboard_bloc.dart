@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:coachhub/blocs/dashboard/dashboard_event.dart';
 import 'package:coachhub/blocs/dashboard/dashboard_state.dart';
+import 'package:coachhub/blocs/auth/auth_bloc.dart';
 import 'package:coachhub/models/asesorado_model.dart';
 import 'package:coachhub/models/dashboard_models.dart';
 import 'package:coachhub/services/dashboard_service.dart';
@@ -12,21 +13,28 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   final DashboardService _dashboardService = DashboardService();
   final ImagePreloadService _imagePreloadService = ImagePreloadService.instance;
+  final AuthBloc authBloc;
+  late int _coachId;
 
-  DashboardBloc() : super(const DashboardInitial()) {
+  DashboardBloc({required this.authBloc}) : super(const DashboardInitial()) {
     on<LoadDashboard>(_onLoadDashboard);
     on<RefreshDashboard>(_onRefreshDashboard);
     on<UpdateStatistics>(_onUpdateStatistics);
     on<RefreshDeudores>(_onRefreshDeudores);
     on<PreloadImages>(_onPreloadImages);
+    on<MarkSessionCompleted>(_onMarkSessionCompleted);
   }
+
+  int get coachId => _coachId;
 
   Future<void> _onLoadDashboard(
     LoadDashboard event,
     Emitter<DashboardState> emit,
   ) async {
+    _coachId = event.coachId;
+
     developer.log(
-      'Iniciando carga del dashboard para coach ${event.coachId}',
+      'Iniciando carga del dashboard para coach $coachId',
       name: 'DashboardBloc',
     );
 
@@ -52,6 +60,8 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     RefreshDashboard event,
     Emitter<DashboardState> emit,
   ) async {
+    _coachId = event.coachId;
+
     if (state is! DashboardLoaded) {
       add(LoadDashboard(event.coachId));
       return;
@@ -151,10 +161,51 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     );
   }
 
+  Future<void> _onMarkSessionCompleted(
+    MarkSessionCompleted event,
+    Emitter<DashboardState> emit,
+  ) async {
+    try {
+      // ✅ Mostrar estado de actualización
+      if (state is DashboardLoaded) {
+        final current = state as DashboardLoaded;
+        emit(current.copyWith(isRefreshing: true));
+      }
+
+      // Ejecutar UPDATE en la base de datos
+      await _dashboardService.markSessionAsCompleted(event.asignacionId);
+
+      // Refrescar estadísticas para mantener sincronización
+      final data = await _fetchDashboardData();
+      if (state is DashboardLoaded) {
+        final current = state as DashboardLoaded;
+        emit(
+          current.copyWith(
+            data: data,
+            isRefreshing: false,
+            lastUpdated: DateTime.now(),
+          ),
+        );
+      }
+    } catch (e, s) {
+      developer.log(
+        'Error al marcar sesión como completada: $e',
+        name: 'DashboardBloc',
+        error: e,
+        stackTrace: s,
+      );
+      // Restaurar estado previo en caso de error
+      if (state is DashboardLoaded) {
+        final current = state as DashboardLoaded;
+        emit(current.copyWith(isRefreshing: false));
+      }
+    }
+  }
+
   void _runDeudoresUpdate() {
     unawaited(
       _dashboardService
-          .updateDeudores()
+          .updateDeudores(coachId)
           .timeout(
             const Duration(seconds: 10),
             onTimeout: () {
@@ -174,12 +225,12 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
 
   Future<DashboardData> _fetchDashboardData() async {
     developer.log(
-      'Cargando datos agregados del dashboard',
+      'Cargando datos agregados del dashboard para coach $coachId',
       name: 'DashboardBloc',
     );
 
     final statsFuture = _dashboardService
-        .getAsesoradosStats()
+        .getAsesoradosStats(coachId)
         .timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -195,7 +246,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         );
 
     final ingresosFuture = _dashboardService
-        .getIngresosMensuales()
+        .getIngresosMensuales(coachId)
         .timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -209,7 +260,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         .catchError((_) => 0.0);
 
     final proximosFuture = _dashboardService
-        .getAsesoradosProximosAVencer()
+        .getAsesoradosProximosAVencer(coachId)
         .timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -223,7 +274,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         .catchError((_) => const <Asesorado>[]);
 
     final agendaFuture = _dashboardService
-        .getAgendaForDate(DateTime.now())
+        .getAgendaForDate(DateTime.now(), coachId)
         .timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -234,7 +285,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         .catchError((_) => const <AgendaSession>[]);
 
     final deudoresFuture = _dashboardService
-        .getDeudores(limit: 5)
+        .getDeudores(coachId, limit: 5)
         .timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -245,7 +296,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         .catchError((_) => const <Asesorado>[]);
 
     final actividadFuture = _dashboardService
-        .getRecentActivity(limit: 5)
+        .getRecentActivity(coachId, limit: 5)
         .timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -260,7 +311,10 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
 
     final stats = await statsFuture;
     final weeklySummaryFuture = _dashboardService
-        .getWeeklySummary(asesoradosActivos: stats['activos'] ?? 0)
+        .getWeeklySummary(
+          coachId: coachId,
+          asesoradosActivos: stats['activos'] ?? 0,
+        )
         .timeout(
           const Duration(seconds: 10),
           onTimeout: () {

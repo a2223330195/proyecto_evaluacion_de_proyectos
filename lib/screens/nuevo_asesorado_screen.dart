@@ -43,7 +43,8 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
   String? _loadPlanesError;
 
   final _dueDateController = TextEditingController();
-  final _edadController = TextEditingController();
+  final _fechaNacimientoController = TextEditingController();
+  int? _calculatedAge;
   final _sexoOptions = ['Masculino', 'Femenino', 'Otro', 'NoEspecifica'];
   String? _selectedSexo;
   final _alturaController = TextEditingController();
@@ -80,6 +81,31 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
     if (picked != null) {
       setState(() {
         _fechaInicioController.text = "${picked.toLocal()}".split(' ')[0];
+      });
+    }
+  }
+
+  Future<void> _selectFechaNacimiento(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate:
+          _fechaNacimientoController.text.isNotEmpty
+              ? DateTime.parse(_fechaNacimientoController.text)
+              : DateTime(2000),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _fechaNacimientoController.text = "${picked.toLocal()}".split(' ')[0];
+        // Calcular edad automáticamente
+        final now = DateTime.now();
+        int calculatedAge = now.year - picked.year;
+        if (now.month < picked.month ||
+            (now.month == picked.month && now.day < picked.day)) {
+          calculatedAge--;
+        }
+        _calculatedAge = calculatedAge;
       });
     }
   }
@@ -131,7 +157,9 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
       _selectedPlanId = asesorado.planId;
       _dueDateController.text =
           asesorado.dueDate?.toIso8601String().split('T')[0] ?? '';
-      _edadController.text = asesorado.edad?.toString() ?? '';
+      _fechaNacimientoController.text =
+          asesorado.fechaNacimiento?.toIso8601String().split('T')[0] ?? '';
+      _calculatedAge = asesorado.edad;
       _selectedSexo = asesorado.sexo;
       _alturaController.text = asesorado.alturaCm?.toString() ?? '';
       _telefonoController.text = asesorado.telefono ?? '';
@@ -149,7 +177,7 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
     _tabController.dispose();
     _nameController.dispose();
     _dueDateController.dispose();
-    _edadController.dispose();
+    _fechaNacimientoController.dispose();
     _alturaController.dispose();
     _telefonoController.dispose();
     _fechaInicioController.dispose();
@@ -213,7 +241,7 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
                     strokeWidth: 2,
                   ),
                 )
-                : const Icon(Icons.save),
+                : const Icon(Icons.save, color: Colors.white),
       ),
     );
   }
@@ -269,9 +297,9 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
         const SizedBox(height: 8),
         _buildManagePlansButton(),
         const SizedBox(height: 24),
-        _buildDueDateField(),
-        const SizedBox(height: 24),
         _buildStartDateField(),
+        const SizedBox(height: 24),
+        _buildDueDateField(),
         const SizedBox(height: 24),
         _buildSectionTitle('Estado'),
         const SizedBox(height: 12),
@@ -521,41 +549,75 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
   }
 
   Widget _buildAgeAndGenderRow() {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: ValidatedTextField(
-            controller: _edadController,
-            labelText: 'Edad',
-            hintText: '25',
-            prefixIcon: Icons.cake,
-            validator: FormValidators.validateEdad,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            isRequired: true,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            value: _selectedSexo,
-            decoration: FormFieldStyles.buildInputDecoration(
-              labelText: 'Sexo',
-              prefixIcon: Icons.wc,
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _fechaNacimientoController,
+                decoration: FormFieldStyles.buildInputDecoration(
+                  labelText: 'Fecha de Nacimiento',
+                  prefixIcon: Icons.cake,
+                ),
+                readOnly: true,
+                onTap: () => _selectFechaNacimiento(context),
+                validator: FormValidators.validateFechaNacimiento,
+              ),
             ),
-            items:
-                _sexoOptions
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                    .toList(),
-            onChanged: (v) => setState(() => _selectedSexo = v),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Selecciona un sexo';
-              }
-              return null;
-            },
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: _selectedSexo,
+                decoration: FormFieldStyles.buildInputDecoration(
+                  labelText: 'Sexo',
+                  prefixIcon: Icons.wc,
+                ),
+                items:
+                    _sexoOptions
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .toList(),
+                onChanged: (v) => setState(() => _selectedSexo = v),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Selecciona un sexo';
+                  }
+                  return null;
+                },
+              ),
+            ),
+          ],
         ),
+        if (_calculatedAge != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE6E9F0), width: 1),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    size: 18,
+                    color: Color(0xFF6B7280),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Edad calculada: $_calculatedAge años',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF374151),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -607,7 +669,7 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
             children: [
               ElevatedButton.icon(
                 onPressed: _selectProfileImage,
-                icon: const Icon(Icons.image),
+                icon: const Icon(Icons.image, color: Colors.white),
                 label: Text(
                   _selectedProfileImage != null
                       ? 'Cambiar Imagen'
@@ -781,7 +843,28 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
       ),
       readOnly: true,
       onTap: () => _selectDate(context),
-      validator: FormValidators.validateFecha,
+      validator: (value) {
+        // Validar que la fecha no esté vacía
+        if (value == null || value.isEmpty) {
+          return 'La fecha de vencimiento es requerida';
+        }
+
+        // Validar lógica: fecha_vencimiento debe ser >= fecha_inicio
+        if (_fechaInicioController.text.isNotEmpty) {
+          try {
+            final fechaVencimiento = DateTime.parse(value);
+            final fechaInicio = DateTime.parse(_fechaInicioController.text);
+
+            if (fechaVencimiento.isBefore(fechaInicio)) {
+              return 'Fecha de vencimiento no puede ser anterior a la fecha de inicio';
+            }
+          } catch (e) {
+            return 'Formato de fecha inválido';
+          }
+        }
+
+        return null;
+      },
     );
   }
 
@@ -794,6 +877,28 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
       ),
       readOnly: true,
       onTap: () => _selectFechaInicio(context),
+      validator: (value) {
+        // Validar que la fecha no esté vacía
+        if (value == null || value.isEmpty) {
+          return 'La fecha de inicio es requerida';
+        }
+
+        // Validar lógica: fecha_inicio debe ser <= fecha_vencimiento
+        if (_dueDateController.text.isNotEmpty) {
+          try {
+            final fechaInicio = DateTime.parse(value);
+            final fechaVencimiento = DateTime.parse(_dueDateController.text);
+
+            if (fechaInicio.isAfter(fechaVencimiento)) {
+              return 'Fecha de inicio no puede ser posterior a la fecha de vencimiento';
+            }
+          } catch (e) {
+            return 'Formato de fecha inválido';
+          }
+        }
+
+        return null;
+      },
     );
   }
 
@@ -833,7 +938,10 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
           _dueDateController.text.isEmpty
               ? null
               : DateTime.parse(_dueDateController.text),
-      edad: int.tryParse(_edadController.text),
+      fechaNacimiento:
+          _fechaNacimientoController.text.isEmpty
+              ? null
+              : DateTime.parse(_fechaNacimientoController.text),
       sexo: _selectedSexo,
       alturaCm: double.tryParse(_alturaController.text),
       telefono: _telefonoController.text.trim(),
@@ -848,6 +956,61 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
 
   Future<void> _handleSaveAsesorado() async {
     if (_formKey.currentState!.validate()) {
+      // Validación cruzada adicional de fechas
+      if (_fechaInicioController.text.isNotEmpty &&
+          _dueDateController.text.isNotEmpty) {
+        try {
+          final fechaInicio = DateTime.parse(_fechaInicioController.text);
+          final fechaVencimiento = DateTime.parse(_dueDateController.text);
+
+          if (fechaVencimiento.isBefore(fechaInicio)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.white),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'La fecha de vencimiento debe ser posterior a la de inicio',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.red.shade600,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            return;
+          }
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Error al validar fechas: $e',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red.shade600,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+      }
+
       setState(() => _isLoading = true);
 
       final scaffoldMessenger = ScaffoldMessenger.of(context);

@@ -27,3 +27,13 @@ class DeleteLote extends LotesProgramadosEvent {
   @override
   List<Object?> get props => [batchId, asesoradoId];
 }
+
+/// Evento para recargar los lotes después de programar una nueva rutina
+class RefreshLotes extends LotesProgramadosEvent {
+  final int asesoradoId;
+
+  const RefreshLotes(this.asesoradoId);
+
+  @override
+  List<Object?> get props => [asesoradoId];
+}

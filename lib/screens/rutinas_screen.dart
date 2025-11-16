@@ -1,5 +1,6 @@
 // lib/screens/rutinas_screen.dart
 
+import 'dart:async';
 import 'package:coachhub/models/rutina_model.dart';
 import 'package:coachhub/models/ejercicio_model.dart' as ejercicio_mdl;
 import 'package:coachhub/screens/crear_rutina_screen.dart';
@@ -23,13 +24,38 @@ class RutinasScreenState extends State<RutinasScreen> {
   final _searchController = TextEditingController();
   String? _selectedCategory;
   bool _verTodos = false;
-  static const int _limiteVisual = 5; // Límite de rutinas visibles por defecto
+  Timer? _debounceTimer; // Debounce timer para búsqueda
+
+  // Paginación inteligente
+  int _currentPage = 1;
+  static const int _itemsPerPage = 10; // Cargar 10 items por vez
+  static const int _initialItemsLimit = 5; // Mostrar 5 items inicialmente
+  static const int _debounceMs = 250; // Throttle de 250ms para búsqueda
+
+  bool _isLoadingMore = false;
+  bool _hasMoreItems = false;
 
   @override
   void initState() {
     super.initState();
     _futureRutinas = _loadRutinas();
-    _searchController.addListener(() {
+    // Agregar listener con debounce para evitar consultas excesivas
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  /// Listener con debounce para cambios en la búsqueda
+  /// Espera 250ms después del último cambio antes de ejecutar la búsqueda
+  void _onSearchChanged() {
+    // Cancelar timer anterior si existe
+    _debounceTimer?.cancel();
+
+    // Crear nuevo timer con debounce
+    _debounceTimer = Timer(const Duration(milliseconds: _debounceMs), () {
+      // Reset paginación y estado "Ver todos" al cambiar filtros
+      _currentPage = 1;
+      _isLoadingMore = false;
+      _hasMoreItems = false;
+      _verTodos = false; // 🔧 Revertir a vista paginada
       _refreshRutinas();
     });
   }
@@ -37,6 +63,7 @@ class RutinasScreenState extends State<RutinasScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _debounceTimer?.cancel(); // Limpiar timer al descartar
     super.dispose();
   }
 
@@ -44,26 +71,78 @@ class RutinasScreenState extends State<RutinasScreen> {
     String query = '',
     String? category,
   }) async {
-    final db = DatabaseConnection.instance;
-    String sql =
-        'SELECT id, nombre, descripcion, categoria FROM rutinas_plantillas WHERE 1=1';
-    List<Object?> params = [];
+    final stopwatch = Stopwatch()..start();
 
-    if (query.isNotEmpty) {
-      sql += ' AND nombre LIKE ?';
-      params.add('%$query%');
+    try {
+      final db = DatabaseConnection.instance;
+      String sql =
+          'SELECT id, nombre, descripcion, categoria FROM rutinas_plantillas WHERE 1=1';
+      List<Object?> params = [];
+
+      if (query.isNotEmpty) {
+        sql += ' AND nombre LIKE ?';
+        params.add('%$query%');
+      }
+
+      if (category != null && category.isNotEmpty) {
+        sql += ' AND categoria = ?';
+        params.add(category);
+      }
+
+      sql += ' ORDER BY nombre';
+
+      final results =
+          params.isNotEmpty ? await db.query(sql, params) : await db.query(sql);
+      final rutinas = results.map((row) => Rutina.fromMap(row.fields)).toList();
+
+      stopwatch.stop();
+      // Usar condición de nivel para logueo en desarrollo
+      if (query.isNotEmpty || category != null) {
+        // Solo log en búsquedas/filtros activos
+        debugPrint(
+          '✓ [Rutinas] Cargadas ${rutinas.length} rutinas en ${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
+
+      // Actualizar estado de si hay más items
+      _hasMoreItems = rutinas.length > _initialItemsLimit;
+
+      return rutinas;
+    } catch (e) {
+      stopwatch.stop();
+      debugPrint(
+        '✗ [Rutinas] Error cargando rutinas (${stopwatch.elapsedMilliseconds}ms): $e',
+      );
+      rethrow;
     }
+  }
 
-    if (category != null && category.isNotEmpty) {
-      sql += ' AND categoria = ?';
-      params.add(category);
+  /// Carga más items de la lista completa (paginación virtual)
+  /// 🔧 CORRECCIÓN: Recalcula _hasMoreItems dinámicamente después de cada página
+  Future<void> _loadMoreItems() async {
+    if (_isLoadingMore || !_hasMoreItems) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      // Simular pequeña espera para evitar spam
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      setState(() {
+        _currentPage++;
+        _isLoadingMore = false;
+
+        // 🔧 CORRECCIÓN #3: Recalcular _hasMoreItems basado en página actual
+        // Necesitamos acceder a rutinas para saber el total
+        // Esto se refrescará en el siguiente build ya que usamos FutureBuilder
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingMore = false;
+      });
     }
-
-    sql += ' ORDER BY nombre';
-
-    final results =
-        params.isNotEmpty ? await db.query(sql, params) : await db.query(sql);
-    return results.map((row) => Rutina.fromMap(row.fields)).toList();
   }
 
   void _refreshRutinas() {
@@ -89,7 +168,7 @@ class RutinasScreenState extends State<RutinasScreen> {
             const SizedBox(height: 24),
             Expanded(child: _buildRutinasList()),
             const SizedBox(height: 16),
-            _buildVerTodosButton(),
+            _buildLoadMoreButton(),
           ],
         ),
       ),
@@ -114,7 +193,7 @@ class RutinasScreenState extends State<RutinasScreen> {
           ],
         ),
         ElevatedButton.icon(
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add, color: Colors.white),
           label: const Text('Crear Nueva Rutina'),
           onPressed: () async {
             final result = await Navigator.push(
@@ -220,10 +299,8 @@ class RutinasScreenState extends State<RutinasScreen> {
               ),
             ],
             onChanged: (value) {
-              setState(() {
-                _selectedCategory = value;
-                _refreshRutinas();
-              });
+              _selectedCategory = value;
+              _refreshRutinas(); // ya contiene setState internamente
             },
           ),
         ),
@@ -293,30 +370,70 @@ class RutinasScreenState extends State<RutinasScreen> {
           );
         }
 
-        // 🎯 TAREA 2.6: Implementar Ver todos / Ver menos
+        // Paginación inteligente: mostrar items progresivamente
         final rutinas = snapshot.data!;
-        final List<Rutina> rutinasMostradas =
-            _verTodos ? rutinas : rutinas.take(_limiteVisual).toList();
+        final int itemsToShow =
+            _verTodos
+                ? rutinas.length
+                : (_initialItemsLimit + (_currentPage - 1) * _itemsPerPage);
 
-        return GridView.builder(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount:
-                MediaQuery.of(context).size.width > 1000
-                    ? 4
-                    : MediaQuery.of(context).size.width > 600
-                    ? 3
-                    : 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.6,
-          ),
-          itemCount: rutinasMostradas.length,
-          itemBuilder: (context, index) {
-            final rutina = rutinasMostradas[index];
-            return _buildRutinaCard(rutina);
-          },
-          shrinkWrap: true,
-          physics: const ScrollPhysics(),
+        // 🔧 CORRECCIÓN #3: Actualizar _hasMoreItems dinámicamente basado en items mostrados
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            final newHasMoreItems = rutinas.length > itemsToShow;
+            if (newHasMoreItems != _hasMoreItems) {
+              // Solo setState si cambió, para evitar rebuilds innecesarios
+              _hasMoreItems = newHasMoreItems;
+            }
+          }
+        });
+
+        final List<Rutina> rutinasMostradas =
+            rutinas.length > itemsToShow
+                ? rutinas.take(itemsToShow).toList()
+                : rutinas;
+
+        return Stack(
+          children: [
+            GridView.builder(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount:
+                    MediaQuery.of(context).size.width > 1000
+                        ? 4
+                        : MediaQuery.of(context).size.width > 600
+                        ? 3
+                        : 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.6,
+              ),
+              itemCount: rutinasMostradas.length,
+              itemBuilder: (context, index) {
+                final rutina = rutinasMostradas[index];
+                return _buildRutinaCard(rutina);
+              },
+              // Mantener renderizado perezoso sin shrinkWrap
+              // La grilla está dentro de Expanded, así que virtualización es posible
+            ),
+            // Indicador de carga al final si hay más items
+            if (_isLoadingMore)
+              Positioned(
+                bottom: 16,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.0,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
@@ -520,7 +637,13 @@ class RutinasScreenState extends State<RutinasScreen> {
 
   Future<void> _showQuickViewDialog(Rutina rutina) async {
     try {
+      final stopwatch = Stopwatch()..start();
       final ejercicios = await _loadEjerciciosParaRutina(rutina.id);
+      stopwatch.stop();
+
+      debugPrint(
+        '✓ [QuickView] ${ejercicios.length} ejercicios cargados en ${stopwatch.elapsedMilliseconds}ms',
+      );
 
       if (!mounted) return;
 
@@ -694,8 +817,8 @@ class RutinasScreenState extends State<RutinasScreen> {
     );
   }
 
-  // 🎯 TAREA 2.6: Botón "Ver todos / Ver menos"
-  Widget _buildVerTodosButton() {
+  // 🎯 Botón para cargar más items (paginación inteligente)
+  Widget _buildLoadMoreButton() {
     return FutureBuilder<List<Rutina>>(
       future: _futureRutinas,
       builder: (context, snapshot) {
@@ -704,24 +827,67 @@ class RutinasScreenState extends State<RutinasScreen> {
         }
 
         final rutinas = snapshot.data!;
-        final bool necesitaBoton = rutinas.length > _limiteVisual;
+
+        // 🔧 CORRECCIÓN: Mostrar botón "Ver menos" cuando _verTodos está activo
+        if (_verTodos) {
+          return Center(
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _verTodos = false;
+                  _currentPage = 1;
+                });
+              },
+              icon: const Icon(Icons.expand_less),
+              label: const Text('Ver menos'),
+            ),
+          );
+        }
+
+        final int itemsShown =
+            _verTodos
+                ? rutinas.length
+                : (_initialItemsLimit + (_currentPage - 1) * _itemsPerPage);
+        final bool necesitaBoton = rutinas.length > itemsShown && !_verTodos;
 
         if (!necesitaBoton) {
           return const SizedBox.shrink();
         }
 
         return Center(
-          child: OutlinedButton.icon(
-            onPressed: () {
-              setState(() {
-                _verTodos = !_verTodos;
-              });
-            },
-            icon: Icon(_verTodos ? Icons.expand_less : Icons.expand_more),
-            label: Text(_verTodos ? 'Ver menos' : 'Ver todos'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
+          child: Column(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _isLoadingMore ? null : _loadMoreItems,
+                icon:
+                    _isLoadingMore
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.expand_more),
+                label: Text(
+                  _isLoadingMore ? 'Cargando...' : 'Cargar $_itemsPerPage más',
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _verTodos = true;
+                  });
+                },
+                icon: const Icon(Icons.list),
+                label: const Text('Ver todos'),
+              ),
+            ],
           ),
         );
       },

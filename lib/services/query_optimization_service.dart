@@ -38,7 +38,7 @@ class QueryOptimizationService {
     final sql = '''
       SELECT 
         a.id, a.nombre, a.avatar_url, a.status, a.plan_id,
-        a.fecha_vencimiento, a.edad, a.sexo, a.altura_cm, a.telefono,
+        a.fecha_vencimiento, a.fecha_nacimiento, a.sexo, a.altura_cm, a.telefono,
         a.fecha_inicio_programa, a.objetivo_principal, a.objetivo_secundario,
         p.nombre AS plan_nombre, p.costo AS plan_costo,
         COUNT(DISTINCT m.id) AS total_mediciones,

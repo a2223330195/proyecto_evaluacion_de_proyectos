@@ -32,7 +32,19 @@ class AsesoradoPagoPendienteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final estadoColor = _getEstadoColor();
-    final diasRestantes = fechaVencimiento.difference(DateTime.now()).inDays;
+
+    // ✅ MEJORA: Normalizar fechas a medianoche para cálculo consistente
+    final hoyNormalizado = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final fechaNormalizada = DateTime(
+      fechaVencimiento.year,
+      fechaVencimiento.month,
+      fechaVencimiento.day,
+    );
+    final diasRestantes = fechaNormalizada.difference(hoyNormalizado).inDays;
 
     return GestureDetector(
       onTap: onVerDetalle,

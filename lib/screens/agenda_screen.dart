@@ -34,6 +34,9 @@ class _AgendaScreenState extends State<AgendaScreen> {
   // 🎯 TAREA 3.1: Formato de calendario (mes o semana)
   CalendarFormat _calendarFormat = CalendarFormat.month;
 
+  // ✅ MEJORA 2: Token para evitar race conditions en navegación de meses
+  int _loadToken = 0;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +46,9 @@ class _AgendaScreenState extends State<AgendaScreen> {
   // --- LÓGICA DE DATOS ---
 
   Future<void> _loadEventosDelMes(DateTime month) async {
+    // ✅ MEJORA 2: Generar nuevo token para esta carga
+    final currentToken = ++_loadToken;
+
     // Calcula el primer y último día del mes
     final primerDia = DateTime(month.year, month.month, 1);
     final ultimoDia = DateTime(month.year, month.month + 1, 0);
@@ -68,6 +74,12 @@ class _AgendaScreenState extends State<AgendaScreen> {
       DateFormat('yyyy-MM-dd').format(ultimoDia),
     ]);
 
+    // ✅ MEJORA 2: Solo actualizar si este token sigue siendo válido
+    // (no ha habido otra carga más reciente)
+    if (currentToken != _loadToken) {
+      return; // Ignorar resultado de una carga antigua
+    }
+
     final Map<DateTime, List<Asignacion>> eventosCargados = {};
     for (final row in results) {
       final asignacion = Asignacion.fromMap(row.fields);
@@ -84,10 +96,14 @@ class _AgendaScreenState extends State<AgendaScreen> {
       eventosCargados[fecha]!.add(asignacion);
     }
 
-    setState(() {
-      _eventos = eventosCargados;
-      _selectedEvents = _getEventosParaDia(_selectedDay); // Actualiza la lista
-    });
+    if (mounted) {
+      setState(() {
+        _eventos = eventosCargados;
+        _selectedEvents = _getEventosParaDia(
+          _selectedDay,
+        ); // Actualiza la lista
+      });
+    }
   }
 
   // Función helper para table_calendar
@@ -215,7 +231,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
         const Spacer(),
         ElevatedButton.icon(
           // Este botón podría llevar a 'Asignar Rutina'
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add, color: Colors.white),
           label: const Text('Programar Actividad'),
           onPressed: () async {
             final result = await showDialog<bool>(
@@ -307,24 +323,118 @@ class _AgendaScreenState extends State<AgendaScreen> {
   // --- LÓGICA DE ACCIONES (CRUD) ---
 
   void _marcarComoCompletada(int asignacionId) async {
-    final db = DatabaseConnection.instance;
-    await db.query('UPDATE asignaciones_agenda SET status = ? WHERE id = ?', [
-      'completada',
-      asignacionId,
-    ]);
+    try {
+      final db = DatabaseConnection.instance;
+      await db.query('UPDATE asignaciones_agenda SET status = ? WHERE id = ?', [
+        'completada',
+        asignacionId,
+      ]);
 
-    // Recarga los eventos para el mes actual
-    _loadEventosDelMes(_focusedDay);
+      // Recarga los eventos para el mes actual
+      _loadEventosDelMes(_focusedDay);
+
+      // ✅ Mostrar feedback de éxito
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('✅ Asignación marcada como completada'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    } catch (e) {
+      // ✅ Mostrar feedback de error con opción de reintentar
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('❌ Error: ${e.toString()}')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            action: SnackBarAction(
+              label: 'Reintentar',
+              textColor: Colors.white,
+              onPressed: () => _marcarComoCompletada(asignacionId),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   void _eliminarAsignacion(int asignacionId) async {
-    final db = DatabaseConnection.instance;
-    await db.query('DELETE FROM asignaciones_agenda WHERE id = ?', [
-      asignacionId,
-    ]);
+    try {
+      final db = DatabaseConnection.instance;
+      await db.query('DELETE FROM asignaciones_agenda WHERE id = ?', [
+        asignacionId,
+      ]);
 
-    // Recarga los eventos para el mes actual
-    _loadEventosDelMes(_focusedDay);
+      // Recarga los eventos para el mes actual
+      _loadEventosDelMes(_focusedDay);
+
+      // ✅ Mostrar feedback de éxito
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('✅ Asignación eliminada'),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    } catch (e) {
+      // ✅ Mostrar feedback de error con opción de reintentar
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('❌ Error al eliminar: ${e.toString()}')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            action: SnackBarAction(
+              label: 'Reintentar',
+              textColor: Colors.white,
+              onPressed: () => _eliminarAsignacion(asignacionId),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   /// Widget helper para mostrar avatar del asesorado con fallback

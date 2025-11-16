@@ -9,6 +9,8 @@ import 'package:coachhub/blocs/pagos_pendientes/pagos_pendientes_state.dart';
 import 'package:coachhub/blocs/bitacora/bitacora_bloc.dart';
 import 'package:coachhub/blocs/bitacora/bitacora_state.dart';
 import 'package:coachhub/blocs/bitacora/bitacora_event.dart';
+import 'package:coachhub/blocs/auth/auth_bloc.dart';
+import 'package:coachhub/blocs/auth/auth_event.dart';
 import 'package:coachhub/models/coach_model.dart';
 import 'package:coachhub/utils/app_styles.dart';
 import 'package:coachhub/widgets/content_cards/agenda_card.dart';
@@ -17,7 +19,6 @@ import 'package:coachhub/widgets/dashboard/pagos_pendientes_card.dart';
 import 'package:coachhub/widgets/left_sidebar.dart';
 import 'package:coachhub/widgets/right_sidebar_cards/deudores_card.dart';
 import 'package:coachhub/widgets/right_sidebar_cards/expirations_card.dart';
-import 'package:coachhub/widgets/right_sidebar_cards/quick_access_card.dart';
 import 'package:coachhub/widgets/right_sidebar_cards/summary_card.dart';
 import 'package:coachhub/widgets/right_sidebar_cards/prioritarias_card.dart';
 import 'package:coachhub/widgets/top_header.dart';
@@ -47,7 +48,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _dashboardBloc =
-        DashboardBloc()
+        DashboardBloc(authBloc: context.read<AuthBloc>())
           ..add(PreloadImages(widget.coach.profilePictureUrl ?? ''))
           ..add(LoadDashboard(widget.coach.id));
     _pagosBloc = PagosBloc();
@@ -60,10 +61,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
-    _dashboardBloc.close();
-    _pagosBloc.close();
-    _pagosPendientesBloc.close();
-    _bitacoraBloc.close();
+    if (!_dashboardBloc.isClosed) {
+      _dashboardBloc.close();
+    }
+    if (!_pagosBloc.isClosed) {
+      _pagosBloc.close();
+    }
+    if (!_pagosPendientesBloc.isClosed) {
+      _pagosPendientesBloc.close();
+    }
+    if (!_bitacoraBloc.isClosed) {
+      _bitacoraBloc.close();
+    }
     super.dispose();
   }
 
@@ -94,7 +103,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (shouldLogout == true && mounted) {
-      Navigator.of(context).maybePop();
+      // Cerrar todos los BLOCs
+      _dashboardBloc.close();
+      _pagosBloc.close();
+      _pagosPendientesBloc.close();
+      _bitacoraBloc.close();
+
+      // Emitir evento de logout al AuthBloc ANTES de navegar
+      if (mounted) {
+        context.read<AuthBloc>().add(const LogoutEvent());
+      }
+
+      // Navegar de vuelta a LoginScreen (destruye el contexto)
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      }
     }
   }
 
@@ -113,20 +136,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 BlocListener<PagosBloc, PagosState>(
                   bloc: _pagosBloc,
                   listener: (context, state) {
-                    // 🎯 TAREA 1.2: Mostrar feedback cuando hay mensaje
-                    if (state is PagosLoaded && state.feedbackMessage != null) {
+                    // 🔧 CORRECCIÓN: Centralizar mensajes de éxito en feedbackMessage
+                    // que se emite desde PagosDetallesCargados en pagos_ficha_widget.dart
+                    // El dashboard solo maneja errores y actualizaciones de estado de pagos pendientes
+
+                    if (state is PagosError) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(state.feedbackMessage!),
-                          backgroundColor: Colors.green,
-                          duration: const Duration(seconds: 2),
-                          behavior: SnackBarBehavior.floating,
+                          content: Text('Error en pagos: ${state.message}'),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 3),
                         ),
                       );
                     }
 
+                    // 🎯 Recargar pagos pendientes cuando se registra abono/pago
                     if (state is AbonoRegistrado || state is PagoCompletado) {
-                      // ✨ Recargar pagos pendientes cuando se registra abono/pago
                       _pagosPendientesBloc.add(
                         CargarPagosPendientes(widget.coach.id),
                       );
@@ -218,95 +243,128 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                           return Stack(
                             children: [
-                              SingleChildScrollView(
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 200,
-                                      ),
-                                      width: _isSidebarCollapsed ? 72 : 240,
-                                      child: LeftSidebar(
-                                        coach: widget.coach,
-                                        collapsed: _isSidebarCollapsed,
-                                        onLogout: _handleLogout,
-                                      ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // ✅ Sidebar fijo (sin scroll independiente)
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    width: _isSidebarCollapsed ? 72 : 240,
+                                    child: LeftSidebar(
+                                      coach: widget.coach,
+                                      collapsed: _isSidebarCollapsed,
+                                      onLogout: _handleLogout,
                                     ),
-                                    Expanded(
-                                      child: SingleChildScrollView(
-                                        child: Padding(
+                                  ),
+                                  // ✅ Contenido central: ScrollView único
+                                  Expanded(
+                                    child: CustomScrollView(
+                                      slivers: [
+                                        SliverPadding(
                                           padding: const EdgeInsets.all(
                                             AppStyles.kDefaultPadding,
                                           ),
-                                          child: Column(
-                                            children: [
-                                              AgendaCard(
-                                                agendaHoy: data.agendaHoy,
+                                          sliver: SliverMainAxisGroup(
+                                            slivers: [
+                                              SliverToBoxAdapter(
+                                                child: AgendaCard(
+                                                  agendaHoy: data.agendaHoy,
+                                                  coachId: widget.coach.id,
+                                                ),
                                               ),
-                                              const SizedBox(height: 24),
-                                              PagosPendientesCard(
-                                                pendientes: _pagosPendientes,
-                                                isUpdating:
-                                                    _pagosPendientesUpdating,
-                                                onTap: () {
-                                                  Navigator.of(
-                                                    context,
-                                                  ).pushNamed(
-                                                    '/pagos-pendientes',
-                                                  );
-                                                },
+                                              const SliverToBoxAdapter(
+                                                child: SizedBox(height: 24),
                                               ),
-                                              const SizedBox(height: 24),
-                                              RecentActivityCard(
-                                                activities:
-                                                    data.actividadReciente,
-                                                isRefreshing:
-                                                    state.isRefreshing,
+                                              SliverToBoxAdapter(
+                                                child: PagosPendientesCard(
+                                                  pendientes: _pagosPendientes,
+                                                  isUpdating:
+                                                      _pagosPendientesUpdating,
+                                                  onTap: () {
+                                                    Navigator.of(
+                                                      context,
+                                                    ).pushNamed(
+                                                      '/pagos-pendientes',
+                                                      arguments:
+                                                          widget.coach.id,
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              const SliverToBoxAdapter(
+                                                child: SizedBox(height: 24),
+                                              ),
+                                              SliverToBoxAdapter(
+                                                child: RecentActivityCard(
+                                                  activities:
+                                                      data.actividadReciente,
+                                                  isRefreshing:
+                                                      state.isRefreshing,
+                                                ),
                                               ),
                                             ],
                                           ),
                                         ),
-                                      ),
+                                      ],
                                     ),
-                                    SizedBox(
-                                      width: 300,
-                                      child: SingleChildScrollView(
-                                        child: Padding(
+                                  ),
+                                  // ✅ Sidebar derecho: ScrollView independiente (ancho fijo)
+                                  SizedBox(
+                                    width: 300,
+                                    child: CustomScrollView(
+                                      slivers: [
+                                        SliverPadding(
                                           padding: const EdgeInsets.all(
                                             AppStyles.kDefaultPadding,
                                           ),
-                                          child: Column(
-                                            children: [
-                                              SummaryCard(
-                                                summary: data.resumenSemanal,
-                                                isRefreshing:
-                                                    state.isRefreshing,
+                                          sliver: SliverMainAxisGroup(
+                                            slivers: [
+                                              SliverToBoxAdapter(
+                                                child: SummaryCard(
+                                                  summary: data.resumenSemanal,
+                                                  isRefreshing:
+                                                      state.isRefreshing,
+                                                  coachId: widget.coach.id,
+                                                ),
                                               ),
-                                              const SizedBox(height: 24),
-                                              DeudoresCard(
-                                                deudores: data.deudoresListado,
-                                                isRefreshing:
-                                                    state.isRefreshing,
+                                              const SliverToBoxAdapter(
+                                                child: SizedBox(height: 24),
                                               ),
-                                              const SizedBox(height: 24),
-                                              ExpirationsCard(
-                                                asesorados:
-                                                    data.asesoradosProximos,
-                                                isRefreshing:
-                                                    state.isRefreshing,
+                                              SliverToBoxAdapter(
+                                                child: DeudoresCard(
+                                                  deudores:
+                                                      data.deudoresListado,
+                                                  isRefreshing:
+                                                      state.isRefreshing,
+                                                ),
                                               ),
-                                              const SizedBox(height: 24),
-                                              const PrioritariasCard(),
-                                              const SizedBox(height: 24),
-                                              const QuickAccessCard(),
+                                              const SliverToBoxAdapter(
+                                                child: SizedBox(height: 24),
+                                              ),
+                                              SliverToBoxAdapter(
+                                                child: ExpirationsCard(
+                                                  asesorados:
+                                                      data.asesoradosProximos,
+                                                  isRefreshing:
+                                                      state.isRefreshing,
+                                                ),
+                                              ),
+                                              const SliverToBoxAdapter(
+                                                child: SizedBox(height: 24),
+                                              ),
+                                              const SliverToBoxAdapter(
+                                                child: PrioritariasCard(),
+                                              ),
+                                              const SliverToBoxAdapter(
+                                                child: SizedBox(height: 24),
+                                              ),
                                             ],
                                           ),
                                         ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                               if (state.isRefreshing)
                                 const Positioned(

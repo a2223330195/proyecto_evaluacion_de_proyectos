@@ -10,11 +10,16 @@ import 'package:coachhub/utils/app_colors.dart';
 import 'package:coachhub/utils/app_styles.dart';
 import 'package:coachhub/widgets/dialogs/schedule_routine_dialog.dart';
 
-class EntrenamientosCard extends StatelessWidget {
+class EntrenamientosCard extends StatefulWidget {
   final int asesoradoId;
 
   const EntrenamientosCard({super.key, required this.asesoradoId});
 
+  @override
+  State<EntrenamientosCard> createState() => _EntrenamientosCardState();
+}
+
+class _EntrenamientosCardState extends State<EntrenamientosCard> {
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -87,18 +92,17 @@ class EntrenamientosCard extends StatelessWidget {
       context: context,
       builder:
           (ctx) => ScheduleRoutineDialog(
-            initialAsesoradoId: asesoradoId,
+            initialAsesoradoId: widget.asesoradoId,
             initialStartDate: DateTime.now(),
             isFromFicha: true,
           ),
     );
 
-    if (result == true) {
-      if (!context.mounted) {
-        return;
-      }
+    // ignore: use_build_context_synchronously
+    if (result == true && context.mounted) {
+      // Recargar entrenamientos
       context.read<EntrenamientosBloc>().add(
-        LoadEntrenamientos(asesoradoId, forceRefresh: true),
+        LoadEntrenamientos(widget.asesoradoId, forceRefresh: true),
       );
     }
   }
@@ -144,7 +148,7 @@ class EntrenamientosCard extends StatelessWidget {
           // ✅ Si volvió con true (actualización exitosa), refrescar el BLoC
           if (result == true && context.mounted) {
             context.read<EntrenamientosBloc>().add(
-              LoadEntrenamientos(asesoradoId, forceRefresh: true),
+              LoadEntrenamientos(widget.asesoradoId, forceRefresh: true),
             );
           }
         },

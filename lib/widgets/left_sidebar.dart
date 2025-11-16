@@ -2,9 +2,12 @@ import 'package:coachhub/models/coach_model.dart';
 import 'package:coachhub/screens/agenda_screen.dart';
 import 'package:coachhub/screens/rutinas_screen.dart';
 import 'package:coachhub/screens/asesorados_screen.dart';
+import 'package:coachhub/screens/reports/reports_screen.dart';
+import 'package:coachhub/blocs/reportes/reports_bloc.dart';
 import 'package:coachhub/utils/app_colors.dart';
 import 'package:coachhub/utils/app_styles.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 class LeftSidebar extends StatefulWidget {
   final Coach coach;
@@ -31,27 +34,61 @@ class _LeftSidebarState extends State<LeftSidebar> {
       width: widget.collapsed ? 72 : 240,
       color: AppColors.card,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Header
           Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                Icon(Icons.fitness_center, color: AppColors.primary),
-                if (!widget.collapsed) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'CoachHub',
-                      style: AppStyles.title.copyWith(fontSize: 22),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ],
+            padding: EdgeInsets.only(
+              left: widget.collapsed ? 16 : 8,
+              right: 8,
+              top: 16,
+              bottom: 16,
             ),
+            child:
+                widget.collapsed
+                    ? Tooltip(
+                      message: 'CoachHub',
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'C',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                          ),
+                        ),
+                      ),
+                    )
+                    : SizedBox(
+                      width: double.infinity,
+                      height: 40,
+                      child: Row(
+                        children: [
+                          Image.asset(
+                            'assets/logo/Logo CoachHUB.png',
+                            height: 40,
+                            width: 40,
+                            fit: BoxFit.contain,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'CoachHub',
+                              style: AppStyles.title.copyWith(fontSize: 22),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
           ),
           const Divider(),
 
@@ -70,13 +107,15 @@ class _LeftSidebarState extends State<LeftSidebar> {
                   _buildMenuItem(icon: Icons.fitness_center, text: 'Rutinas'),
                   _buildMenuItem(icon: Icons.calendar_today, text: 'Agenda'),
                   _buildMenuItem(icon: Icons.bar_chart, text: 'Reportes'),
-                  _buildMenuItem(icon: Icons.settings, text: 'Configuración'),
                 ],
               ),
             ),
           ),
 
+          const Spacer(),
+
           const Divider(),
+          const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child:
@@ -180,6 +219,17 @@ class _LeftSidebarState extends State<LeftSidebar> {
                       context,
                       MaterialPageRoute(
                         builder: (context) => const AgendaScreen(),
+                      ),
+                    );
+                  } else if (text == 'Reportes') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (context) => BlocProvider(
+                              create: (context) => ReportsBloc(),
+                              child: ReportsScreen(coachId: widget.coach.id),
+                            ),
                       ),
                     );
                   }
