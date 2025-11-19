@@ -229,7 +229,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
       return;
     }
 
-    await _handleExport(type: type, format: 'PDF', emit: emit);
+    await _handleExport(type: type, format: 'pdf', emit: emit, reportType: event.reportType);
   }
 
   Future<void> _onExportReportToExcel(
@@ -242,7 +242,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
       return;
     }
 
-    await _handleExport(type: type, format: 'Excel', emit: emit);
+    await _handleExport(type: type, format: 'excel', emit: emit, reportType: event.reportType);
   }
 
   Future<void> _onShareReport(
@@ -262,7 +262,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
     }
 
     final format = event.format.toLowerCase();
-    emit(ShareInProgress(event.format.toUpperCase()));
+    emit(ShareInProgress(reportType: event.reportType, format: event.format));
 
     try {
       final shared = await _shareReportData(
@@ -461,6 +461,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
     required _ReportType type,
     required String format,
     required Emitter<ReportsState> emit,
+    required String reportType,
   }) async {
     final dateRange = _currentDateRange;
     if (dateRange == null) {
@@ -468,7 +469,7 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
       return;
     }
 
-    emit(ExportInProgress(format));
+    emit(ExportInProgress(reportType: reportType, format: format));
 
     try {
       final filePath = await _exportReport(

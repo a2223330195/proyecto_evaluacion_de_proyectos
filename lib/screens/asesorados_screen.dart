@@ -386,7 +386,10 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
             Row(
               children: [
                 ElevatedButton.icon(
-                  icon: const Icon(Icons.calendar_today_outlined),
+                  icon: const Icon(
+                    Icons.calendar_today_outlined,
+                    color: Colors.white,
+                  ),
                   label: const Text('Programar rutina'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.accentPurple,

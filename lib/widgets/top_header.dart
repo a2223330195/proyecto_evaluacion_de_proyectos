@@ -8,6 +8,7 @@ import 'package:coachhub/services/image_service.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:coachhub/screens/coach_profile_screen.dart';
 import 'package:coachhub/widgets/dialogs/schedule_routine_dialog.dart';
 
 class TopHeader extends StatefulWidget {
@@ -388,14 +389,23 @@ class _TopHeaderState extends State<TopHeader> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 onSelected: (value) {
-                  if (value == 1) {
+                  if (value == 0) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (context) =>
+                                CoachProfileScreen(coach: widget.coach),
+                      ),
+                    );
+                  } else if (value == 1) {
                     widget.onLogoutRequested();
                   }
                 },
                 itemBuilder:
                     (context) => [
                       PopupMenuItem<int>(
-                        enabled: false,
+                        value: 0,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -412,6 +422,21 @@ class _TopHeaderState extends State<TopHeader> {
                             Text(
                               'Plan: ${widget.coach.plan}',
                               style: AppStyles.secondary,
+                            ),
+                            const SizedBox(height: 8),
+                            const Row(
+                              children: [
+                                Icon(Icons.edit, size: 14, color: AppColors.primary),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Editar Perfil',
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

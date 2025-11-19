@@ -29,6 +29,159 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // --- Helper Methods ---
 
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isChecking = false;
+    bool emailFound = false;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Recuperar Contraseña'),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!emailFound) ...[
+                      const Text(
+                        'Ingresa tu correo electrónico para buscar tu cuenta.',
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: emailController,
+                        decoration: const InputDecoration(
+                          labelText: 'Correo Electrónico',
+                          prefixIcon: Icon(Icons.email),
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (val) {
+                          if (val == null || val.isEmpty) {
+                            return 'Ingresa tu correo';
+                          }
+                          if (!val.contains('@')) return 'Correo inválido';
+                          return null;
+                        },
+                      ),
+                    ] else ...[
+                      const Text(
+                        '¡Cuenta encontrada! Ingresa tu nueva contraseña.',
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: passwordController,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Nueva Contraseña',
+                          prefixIcon: Icon(Icons.lock),
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (val) {
+                          if (val == null || val.length < 6) {
+                            return 'Mínimo 6 caracteres';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+                    if (isChecking)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 16),
+                        child: CircularProgressIndicator(),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: isChecking
+                      ? null
+                      : () async {
+                          if (!formKey.currentState!.validate()) return;
+
+                          setState(() => isChecking = true);
+                          final db = DatabaseConnection.instance;
+
+                          try {
+                            if (!emailFound) {
+                              // Paso 1: Verificar email
+                              final email = emailController.text
+                                  .toLowerCase()
+                                  .replaceAll("'", "''");
+                              final results = await db.query(
+                                "SELECT id FROM coaches WHERE LOWER(email) = '$email'",
+                              );
+
+                              if (results.isNotEmpty) {
+                                setState(() {
+                                  emailFound = true;
+                                  isChecking = false;
+                                });
+                              } else {
+                                setState(() => isChecking = false);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Correo no encontrado'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            } else {
+                              // Paso 2: Actualizar contraseña
+                              final email = emailController.text
+                                  .toLowerCase()
+                                  .replaceAll("'", "''");
+                              final newHash = BCrypt.hashpw(
+                                passwordController.text,
+                                BCrypt.gensalt(),
+                              );
+
+                              await db.query(
+                                "UPDATE coaches SET password_hash = '$newHash' WHERE LOWER(email) = '$email'",
+                              );
+
+                              if (!context.mounted) return;
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Contraseña actualizada exitosamente',
+                                  ),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            setState(() => isChecking = false);
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                  child: Text(emailFound ? 'Actualizar' : 'Buscar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildEmailField() {
     return TextFormField(
       controller: _emailController,
@@ -262,22 +415,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder:
-                          (context) => AlertDialog(
-                            title: const Text('Recuperación de Contraseña'),
-                            content: const Text(
-                              'Esta función no está implementada.\n\nPor favor, contacta al administrador (julian@coach.com) para resetear tu contraseña manualmente.',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('Entendido'),
-                              ),
-                            ],
-                          ),
-                    );
+                    _showForgotPasswordDialog();
                   },
                   child: const Text('¿Olvidaste tu contraseña?'),
                 ),

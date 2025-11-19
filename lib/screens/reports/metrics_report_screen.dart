@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +12,49 @@ class MetricsReportScreen extends StatelessWidget {
   final MetricsReportData data;
 
   const MetricsReportScreen({super.key, required this.data});
+
+  Color _getWeightChangeColor(
+    double? weightChange,
+    String? objetivoPrincipal,
+    String? objetivoSecundario,
+  ) {
+    if (weightChange == null || weightChange == 0) {
+      return ReportColors.neutral;
+    }
+
+    final targets = '${objetivoPrincipal ?? ''} ${objetivoSecundario ?? ''}'.toLowerCase();
+    final wantsToLose =
+        targets.contains('bajar') || targets.contains('disminuir') || targets.contains('reducir');
+    final wantsToGain =
+        targets.contains('subir') || targets.contains('aumentar') || targets.contains('ganar');
+
+    final lostWeight = weightChange < 0;
+    final gainedWeight = weightChange > 0;
+
+    if (wantsToLose && lostWeight) {
+      return ReportColors.success;
+    }
+    if (wantsToGain && gainedWeight) {
+      return ReportColors.success;
+    }
+    if (wantsToLose && gainedWeight) {
+      return ReportColors.error;
+    }
+    if (wantsToGain && lostWeight) {
+      return ReportColors.error;
+    }
+
+    return ReportColors.neutral;
+  }
+
+  MetricsSummary? _findSummaryFor(String asesoradoName) {
+    for (final summary in data.summaryByAsesorado) {
+      if (summary.asesoradoName == asesoradoName) {
+        return summary;
+      }
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,12 +104,43 @@ class MetricsReportScreen extends StatelessWidget {
               ],
               rows:
                   data.summaryByAsesorado.map((summary) {
-                    final weightChange = summary.weightChange ?? 0;
-                    final isPositive = weightChange > 0;
+                    final rawChange = summary.weightChange;
+                    final weightChange = rawChange ?? 0;
+                    final changeColor = _getWeightChangeColor(
+                      rawChange,
+                      summary.objetivoPrincipal,
+                      summary.objetivoSecundario,
+                    );
+                    final changePrefix = weightChange > 0 ? '+' : '';
 
                     return DataRow(
                       cells: [
-                        DataCell(Text(summary.asesoradoName)),
+                        DataCell(
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 12,
+                                backgroundColor: ReportColors.primary
+                                    .withValues(alpha: 0.2),
+                                backgroundImage:
+                                    summary.avatarUrl != null
+                                        ? FileImage(File(summary.avatarUrl!))
+                                        : null,
+                                child:
+                                    summary.avatarUrl == null
+                                        ? const Icon(
+                                          Icons.person,
+                                          size: 16,
+                                          color: ReportColors.primary,
+                                        )
+                                        : null,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(summary.asesoradoName),
+                            ],
+                          ),
+                        ),
                         DataCell(
                           Text(
                             summary.initialWeight?.toStringAsFixed(1) ?? '-',
@@ -78,12 +153,9 @@ class MetricsReportScreen extends StatelessWidget {
                         ),
                         DataCell(
                           Text(
-                            '${isPositive ? '+' : ''}${weightChange.toStringAsFixed(1)} kg',
+                            '$changePrefix${weightChange.toStringAsFixed(1)} kg',
                             style: TextStyle(
-                              color:
-                                  isPositive
-                                      ? ReportColors.error
-                                      : ReportColors.success,
+                              color: changeColor,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -117,6 +189,7 @@ class MetricsReportScreen extends StatelessWidget {
           ),
           constraints: const BoxConstraints(maxHeight: 400),
           child: ListView.separated(
+            shrinkWrap: true,
             physics: const ScrollPhysics(),
             itemCount: data.significantChanges.length,
             separatorBuilder:
@@ -124,8 +197,36 @@ class MetricsReportScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final change = data.significantChanges[index];
               final isNegative = change.change < 0;
+              final relatedSummary =
+                  change.metric == 'Peso'
+                      ? _findSummaryFor(change.asesoradoName)
+                      : null;
+              final changeColor =
+                  change.metric == 'Peso'
+                      ? _getWeightChangeColor(
+                        change.change,
+                        relatedSummary?.objetivoPrincipal,
+                        relatedSummary?.objetivoSecundario,
+                      )
+                      : (isNegative
+                          ? ReportColors.success
+                          : ReportColors.error);
 
               return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: ReportColors.primary.withValues(alpha: 0.2),
+                  backgroundImage:
+                      change.avatarUrl != null
+                          ? FileImage(File(change.avatarUrl!))
+                          : null,
+                  child:
+                      change.avatarUrl == null
+                          ? const Icon(
+                            Icons.person,
+                            color: ReportColors.primary,
+                          )
+                          : null,
+                ),
                 title: Text(change.asesoradoName),
                 subtitle: Text(change.metric),
                 trailing: Column(
@@ -136,10 +237,7 @@ class MetricsReportScreen extends StatelessWidget {
                       '${isNegative ? '' : '+'}${change.changePercentage.toStringAsFixed(1)}%',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color:
-                            isNegative
-                                ? ReportColors.success
-                                : ReportColors.error,
+                        color: changeColor,
                       ),
                     ),
                     Text(
@@ -159,7 +257,19 @@ class MetricsReportScreen extends StatelessWidget {
   Widget _buildExportButtons(BuildContext context) {
     return BlocBuilder<ReportsBloc, ReportsState>(
       builder: (context, state) {
-        final isLoading = state is ExportInProgress || state is ShareInProgress;
+        // Verificar si está cargando para este reporte específico
+        final isExportingPdf = state is ExportInProgress &&
+            state.reportType == 'metricas' &&
+            state.format == 'pdf';
+        final isExportingExcel = state is ExportInProgress &&
+            state.reportType == 'metricas' &&
+            state.format == 'excel';
+        final isSharingPdf = state is ShareInProgress &&
+            state.reportType == 'metricas' &&
+            state.format == 'pdf';
+        final isSharingExcel = state is ShareInProgress &&
+            state.reportType == 'metricas' &&
+            state.format == 'excel';
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -169,7 +279,7 @@ class MetricsReportScreen extends StatelessWidget {
               children: [
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isExportingPdf
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -177,13 +287,13 @@ class MetricsReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isExportingPdf
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.picture_as_pdf),
+                          : const Icon(Icons.picture_as_pdf, color: Colors.white),
                   label: const Text('Exportar PDF'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
@@ -193,7 +303,7 @@ class MetricsReportScreen extends StatelessWidget {
                 ),
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isExportingExcel
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -201,13 +311,13 @@ class MetricsReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isExportingExcel
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.table_chart),
+                          : const Icon(Icons.table_chart, color: Colors.white),
                   label: const Text('Exportar Excel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
@@ -225,7 +335,7 @@ class MetricsReportScreen extends StatelessWidget {
               children: [
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isSharingPdf
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -236,13 +346,13 @@ class MetricsReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isSharingPdf
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.share),
+                          : const Icon(Icons.share, color: Colors.white),
                   label: const Text('Compartir PDF'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ReportColors.primary,
@@ -254,7 +364,7 @@ class MetricsReportScreen extends StatelessWidget {
                 ),
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isSharingExcel
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -265,13 +375,13 @@ class MetricsReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isSharingExcel
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.share),
+                          : const Icon(Icons.share, color: Colors.white),
                   label: const Text('Compartir Excel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ReportColors.primary,

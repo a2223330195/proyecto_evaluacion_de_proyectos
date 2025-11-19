@@ -62,6 +62,7 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
   Asesorado? _selectedAsesorado;
   Rutina? _selectedRutina;
   FocusNode? _rutinaFocusNode;
+  TextEditingController? _rutinaSearchController;
 
   bool _isLoading = true;
   bool _isSubmitting = false;
@@ -93,6 +94,7 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
   @override
   void dispose() {
     _notesController.dispose();
+    _rutinaSearchController = null;
 
     // ⚠️ NO DISPOSE _rutinaFocusNode: Es creado y manejado por Autocomplete internamente.
     // Disposerlo aquí causa "FocusNode was used after being disposed" en el siguiente rebuild.
@@ -141,6 +143,8 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
         _isLoading = false;
       });
 
+      _syncRutinaFieldText(force: true);
+
       _regenerateEntries(preserveExisting: false);
     } on TimeoutException catch (e) {
       if (!mounted) return;
@@ -183,6 +187,18 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
         ),
       );
     }
+  }
+
+  void _syncRutinaFieldText({bool force = false}) {
+    final controller = _rutinaSearchController;
+    if (controller == null) return;
+    final targetText = _selectedRutina?.nombre ?? '';
+    if (!force && controller.text == targetText) return;
+    controller.value = controller.value.copyWith(
+      text: targetText,
+      selection: TextSelection.collapsed(offset: targetText.length),
+      composing: TextRange.empty,
+    );
   }
 
   Asesorado? _resolveInitialAsesorado(List<Asesorado> items) {
@@ -512,6 +528,8 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
         const SizedBox(height: 8),
         // 🎯 TAREA 2.1: Buscador dinámico en lugar de dropdown
         Autocomplete<Rutina>(
+          initialValue: TextEditingValue(text: _selectedRutina?.nombre ?? ''),
+          displayStringForOption: (rutina) => rutina.nombre,
           optionsBuilder: (TextEditingValue textEditingValue) {
             if (textEditingValue.text.isEmpty) {
               return _rutinas;
@@ -529,6 +547,7 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
             setState(() {
               _selectedRutina = selection;
             });
+            _syncRutinaFieldText(force: true);
             // ✅ Cerrar el dropdown desfocalizando después de la selección
             Future.microtask(() {
               _rutinaFocusNode?.unfocus();
@@ -542,6 +561,8 @@ class _ScheduleRoutineDialogState extends State<ScheduleRoutineDialog> {
           ) {
             // ✅ Guardar referencia del FocusNode para usarlo en onSelected
             _rutinaFocusNode = focusNode;
+            _rutinaSearchController = textEditingController;
+            _syncRutinaFieldText(force: true);
 
             return TextFormField(
               controller: textEditingController,

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -153,10 +154,27 @@ class BitacoraReportScreen extends StatelessWidget {
                 (_, __) => Divider(height: 1, color: ReportColors.border),
             itemBuilder: (context, index) {
               final entry = data.notesByAsesorado.entries.toList()[index];
+              final name = entry.key;
+              String? avatarUrl;
+              try {
+                avatarUrl =
+                    data.notesByPeriod
+                        .firstWhere((n) => n.asesoradoName == name)
+                        .avatarUrl;
+              } catch (_) {}
+
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: ReportColors.primary.withValues(alpha: 0.2),
-                  child: const Icon(Icons.person, color: ReportColors.primary),
+                  backgroundImage:
+                      avatarUrl != null ? FileImage(File(avatarUrl)) : null,
+                  child:
+                      avatarUrl == null
+                          ? const Icon(
+                            Icons.person,
+                            color: ReportColors.primary,
+                          )
+                          : null,
                 ),
                 title: Text(entry.key),
                 trailing: Container(
@@ -210,6 +228,22 @@ class BitacoraReportScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final tracking = data.objectiveTracking[index];
               return ExpansionTile(
+                leading: CircleAvatar(
+                  backgroundColor: ReportColors.secondary.withValues(
+                    alpha: 0.2,
+                  ),
+                  backgroundImage:
+                      tracking.avatarUrl != null
+                          ? FileImage(File(tracking.avatarUrl!))
+                          : null,
+                  child:
+                      tracking.avatarUrl == null
+                          ? const Icon(
+                            Icons.person,
+                            color: ReportColors.secondary,
+                          )
+                          : null,
+                ),
                 title: Text(
                   tracking.asesoradoName,
                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -292,7 +326,19 @@ class BitacoraReportScreen extends StatelessWidget {
   Widget _buildExportButtons(BuildContext context) {
     return BlocBuilder<ReportsBloc, ReportsState>(
       builder: (context, state) {
-        final isLoading = state is ExportInProgress || state is ShareInProgress;
+        // Verificar si está cargando para este reporte específico
+        final isExportingPdf = state is ExportInProgress &&
+            state.reportType == 'bitacora' &&
+            state.format == 'pdf';
+        final isExportingExcel = state is ExportInProgress &&
+            state.reportType == 'bitacora' &&
+            state.format == 'excel';
+        final isSharingPdf = state is ShareInProgress &&
+            state.reportType == 'bitacora' &&
+            state.format == 'pdf';
+        final isSharingExcel = state is ShareInProgress &&
+            state.reportType == 'bitacora' &&
+            state.format == 'excel';
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -302,7 +348,7 @@ class BitacoraReportScreen extends StatelessWidget {
               children: [
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isExportingPdf
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -310,13 +356,13 @@ class BitacoraReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isExportingPdf
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.picture_as_pdf),
+                          : const Icon(Icons.picture_as_pdf, color: Colors.white),
                   label: const Text('Exportar PDF'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
@@ -326,7 +372,7 @@ class BitacoraReportScreen extends StatelessWidget {
                 ),
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isExportingExcel
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -334,13 +380,13 @@ class BitacoraReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isExportingExcel
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.table_chart),
+                          : const Icon(Icons.table_chart, color: Colors.white),
                   label: const Text('Exportar Excel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
@@ -358,7 +404,7 @@ class BitacoraReportScreen extends StatelessWidget {
               children: [
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isSharingPdf
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -369,13 +415,13 @@ class BitacoraReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isSharingPdf
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.share),
+                          : const Icon(Icons.share, color: Colors.white),
                   label: const Text('Compartir PDF'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ReportColors.primary,
@@ -387,7 +433,7 @@ class BitacoraReportScreen extends StatelessWidget {
                 ),
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isSharingExcel
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -398,13 +444,13 @@ class BitacoraReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isSharingExcel
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.share),
+                          : const Icon(Icons.share, color: Colors.white),
                   label: const Text('Compartir Excel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ReportColors.primary,

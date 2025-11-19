@@ -17,6 +17,7 @@ class _RoutineAssignmentRecord {
   final String routineCategory;
   final int asesoradoId;
   final String asesoradoName;
+  final String? avatarUrl;
 
   _RoutineAssignmentRecord({
     required this.assignmentId,
@@ -25,6 +26,7 @@ class _RoutineAssignmentRecord {
     required this.routineCategory,
     required this.asesoradoId,
     required this.asesoradoName,
+    this.avatarUrl,
   });
 }
 
@@ -49,12 +51,14 @@ class _RoutineStatsAccumulator {
 
 class _RoutineProgressAccumulator {
   final String asesoradoName;
+  final String? avatarUrl;
   final String routineName;
   int seriesAssigned = 0;
   int seriesCompleted = 0;
 
   _RoutineProgressAccumulator({
     required this.asesoradoName,
+    this.avatarUrl,
     required this.routineName,
   });
 }
@@ -136,6 +140,7 @@ class ReportsService {
           pm.id,
           pm.asesorado_id,
           a.nombre as asesorado_name,
+          a.avatar_url,
           pm.fecha_pago,
           pm.monto,
           pm.periodo,
@@ -162,6 +167,7 @@ class ReportsService {
                 (r) => PaymentDetail(
                   id: int.tryParse(r.fields['id'].toString()) ?? 0,
                   asesoradoName: r.fields['asesorado_name']?.toString() ?? '',
+                  avatarUrl: r.fields['avatar_url']?.toString(),
                   paymentDate: DateTime.parse(
                     r.fields['fecha_pago'].toString(),
                   ),
@@ -245,6 +251,7 @@ class ReportsService {
         SELECT 
           a.id,
           a.nombre,
+          a.avatar_url,
           a.plan_id,
           a.fecha_vencimiento,
           COALESCE(p.costo, 0) as plan_costo,
@@ -300,6 +307,7 @@ class ReportsService {
             return DebtorDetail(
               asesoradoId: int.tryParse(r.fields['id'].toString()) ?? 0,
               asesoradoName: r.fields['nombre']?.toString() ?? '',
+              avatarUrl: r.fields['avatar_url']?.toString(),
               debtAmount:
                   double.tryParse(
                     r.fields['deuda_actual']?.toString() ?? '0',
@@ -357,7 +365,8 @@ class ReportsService {
           rp.nombre AS routine_name,
           rp.categoria AS routine_category,
           aa.asesorado_id,
-          a.nombre AS asesorado_name
+          a.nombre AS asesorado_name,
+          a.avatar_url
         FROM asignaciones_agenda aa
         JOIN asesorados a ON aa.asesorado_id = a.id
         JOIN rutinas_plantillas rp ON aa.plantilla_id = rp.id
@@ -408,6 +417,7 @@ class ReportsService {
             routineCategory: row.fields['routine_category']?.toString() ?? '',
             asesoradoId: asesoradoId,
             asesoradoName: row.fields['asesorado_name']?.toString() ?? '',
+            avatarUrl: row.fields['avatar_url']?.toString(),
           ),
         );
       }
@@ -501,6 +511,7 @@ class ReportsService {
           progressKey,
           () => _RoutineProgressAccumulator(
             asesoradoName: record.asesoradoName,
+            avatarUrl: record.avatarUrl,
             routineName: record.routineName,
           ),
         );
@@ -540,6 +551,7 @@ class ReportsService {
 
               return RoutineProgress(
                 asesoradoName: acc.asesoradoName,
+                avatarUrl: acc.avatarUrl,
                 routineName: acc.routineName,
                 seriesCompleted: completed,
                 seriesAssigned: assigned,
@@ -599,6 +611,7 @@ class ReportsService {
       final metricsQuery = '''
         SELECT 
           a.nombre as asesorado_name,
+          a.avatar_url,
           m.fecha_medicion,
           m.peso,
           m.porcentaje_grasa,
@@ -626,6 +639,7 @@ class ReportsService {
               .map(
                 (r) => MetricsEvolution(
                   asesoradoName: r.fields['asesorado_name']?.toString() ?? '',
+                  avatarUrl: r.fields['avatar_url']?.toString(),
                   measurementDate: DateTime.parse(
                     r.fields['fecha_medicion'].toString(),
                   ),
@@ -684,6 +698,9 @@ class ReportsService {
         SELECT 
           a.id,
           a.nombre,
+          a.avatar_url,
+          a.objetivo_principal,
+          a.objetivo_secundario,
           (SELECT m.peso FROM mediciones m 
            WHERE m.asesorado_id = a.id 
            AND m.fecha_medicion BETWEEN ? AND ?
@@ -706,7 +723,7 @@ class ReportsService {
           AND m.fecha_medicion BETWEEN ? AND ?
         WHERE a.coach_id = ?
           ${asesoradoId != null ? 'AND a.id = ?' : ''}
-        GROUP BY a.id, a.nombre
+        GROUP BY a.id, a.nombre, a.objetivo_principal, a.objetivo_secundario
       ''';
 
       final params = [
@@ -729,6 +746,7 @@ class ReportsService {
 
       for (final r in results) {
         final name = r.fields['nombre']?.toString() ?? '';
+        final avatarUrl = r.fields['avatar_url']?.toString();
         final initialWeight = double.tryParse(
           r.fields['initial_weight']?.toString() ?? '',
         );
@@ -741,6 +759,8 @@ class ReportsService {
         final currentFat = double.tryParse(
           r.fields['current_fat']?.toString() ?? '',
         );
+        final objetivoPrincipal = r.fields['objetivo_principal']?.toString();
+        final objetivoSecundario = r.fields['objetivo_secundario']?.toString();
 
         double? weightChange;
         if (initialWeight != null && currentWeight != null) {
@@ -755,6 +775,7 @@ class ReportsService {
         summary.add(
           MetricsSummary(
             asesoradoName: name,
+            avatarUrl: avatarUrl,
             initialWeight: initialWeight,
             currentWeight: currentWeight,
             weightChange: weightChange,
@@ -763,6 +784,8 @@ class ReportsService {
             fatChange: fatChange,
             measurementCount:
                 int.tryParse(r.fields['measurement_count'].toString()) ?? 0,
+            objetivoPrincipal: objetivoPrincipal?.isNotEmpty == true ? objetivoPrincipal : null,
+            objetivoSecundario: objetivoSecundario?.isNotEmpty == true ? objetivoSecundario : null,
           ),
         );
       }
@@ -806,6 +829,7 @@ class ReportsService {
               changes.add(
                 MetricsChange(
                   asesoradoName: entry.key,
+                  avatarUrl: first.avatarUrl,
                   metric: 'Peso',
                   change: change,
                   changePercentage: changePercent,
@@ -824,6 +848,7 @@ class ReportsService {
               changes.add(
                 MetricsChange(
                   asesoradoName: entry.key,
+                  avatarUrl: first.avatarUrl,
                   metric: 'Porcentaje de grasa',
                   change: change,
                   changePercentage: changePercent,
@@ -875,6 +900,7 @@ class ReportsService {
           n.id,
           n.asesorado_id,
           a.nombre as asesorado_name,
+          a.avatar_url,
           n.contenido,
           n.fecha_creacion,
           n.prioritaria
@@ -914,6 +940,7 @@ class ReportsService {
           NoteEntry(
             id: int.tryParse(r.fields['id'].toString()) ?? 0,
             asesoradoName: asesoradoName,
+            avatarUrl: r.fields['avatar_url']?.toString(),
             content: r.fields['contenido']?.toString() ?? '',
             createdAt: DateTime.parse(r.fields['fecha_creacion'].toString()),
             isPriority: isPriority,
@@ -973,6 +1000,7 @@ class ReportsService {
             final existing = tracking[key]!;
             tracking[key] = ObjectiveTracking(
               asesoradoName: existing.asesoradoName,
+              avatarUrl: existing.avatarUrl,
               objective: existing.objective,
               notesCount: existing.notesCount + 1,
               firstNote: existing.firstNote,
@@ -984,6 +1012,7 @@ class ReportsService {
           } else {
             tracking[key] = ObjectiveTracking(
               asesoradoName: note.asesoradoName,
+              avatarUrl: note.avatarUrl,
               objective: keyword,
               notesCount: 1,
               firstNote: note.createdAt,

@@ -106,12 +106,13 @@ class ReportsError extends ReportsState {
 }
 
 class ExportInProgress extends ReportsState {
+  final String reportType;
   final String format;
 
-  const ExportInProgress(this.format);
+  const ExportInProgress({required this.reportType, required this.format});
 
   @override
-  List<Object?> get props => [format];
+  List<Object?> get props => [reportType, format];
 }
 
 class ExportSuccess extends ReportsState {
@@ -125,12 +126,13 @@ class ExportSuccess extends ReportsState {
 }
 
 class ShareInProgress extends ReportsState {
+  final String reportType;
   final String format;
 
-  const ShareInProgress(this.format);
+  const ShareInProgress({required this.reportType, required this.format});
 
   @override
-  List<Object?> get props => [format];
+  List<Object?> get props => [reportType, format];
 }
 
 class ShareSuccess extends ReportsState {

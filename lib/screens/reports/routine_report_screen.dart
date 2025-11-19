@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -202,6 +203,20 @@ class RoutineReportScreen extends StatelessWidget {
                       : ReportColors.error;
 
               return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: ReportColors.primary.withValues(alpha: 0.2),
+                  backgroundImage:
+                      progress.avatarUrl != null
+                          ? FileImage(File(progress.avatarUrl!))
+                          : null,
+                  child:
+                      progress.avatarUrl == null
+                          ? const Icon(
+                            Icons.person,
+                            color: ReportColors.primary,
+                          )
+                          : null,
+                ),
                 title: Text(progress.asesoradoName),
                 subtitle: Text(
                   progress.routineName,
@@ -243,7 +258,19 @@ class RoutineReportScreen extends StatelessWidget {
   Widget _buildExportButtons(BuildContext context) {
     return BlocBuilder<ReportsBloc, ReportsState>(
       builder: (context, state) {
-        final isLoading = state is ExportInProgress || state is ShareInProgress;
+        // Verificar si está cargando para este reporte específico
+        final isExportingPdf = state is ExportInProgress &&
+            state.reportType == 'rutinas' &&
+            state.format == 'pdf';
+        final isExportingExcel = state is ExportInProgress &&
+            state.reportType == 'rutinas' &&
+            state.format == 'excel';
+        final isSharingPdf = state is ShareInProgress &&
+            state.reportType == 'rutinas' &&
+            state.format == 'pdf';
+        final isSharingExcel = state is ShareInProgress &&
+            state.reportType == 'rutinas' &&
+            state.format == 'excel';
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -253,7 +280,7 @@ class RoutineReportScreen extends StatelessWidget {
               children: [
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isExportingPdf
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -261,13 +288,13 @@ class RoutineReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isExportingPdf
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.picture_as_pdf),
+                          : const Icon(Icons.picture_as_pdf, color: Colors.white),
                   label: const Text('Exportar PDF'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
@@ -277,7 +304,7 @@ class RoutineReportScreen extends StatelessWidget {
                 ),
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isExportingExcel
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -285,13 +312,13 @@ class RoutineReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isExportingExcel
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.table_chart),
+                          : const Icon(Icons.table_chart, color: Colors.white),
                   label: const Text('Exportar Excel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
@@ -309,7 +336,7 @@ class RoutineReportScreen extends StatelessWidget {
               children: [
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isSharingPdf
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -320,13 +347,13 @@ class RoutineReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isSharingPdf
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.share),
+                          : const Icon(Icons.share, color: Colors.white),
                   label: const Text('Compartir PDF'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ReportColors.primary,
@@ -338,7 +365,7 @@ class RoutineReportScreen extends StatelessWidget {
                 ),
                 ElevatedButton.icon(
                   onPressed:
-                      isLoading
+                      isSharingExcel
                           ? null
                           : () {
                             context.read<ReportsBloc>().add(
@@ -349,13 +376,13 @@ class RoutineReportScreen extends StatelessWidget {
                             );
                           },
                   icon:
-                      isLoading
+                      isSharingExcel
                           ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.share),
+                          : const Icon(Icons.share, color: Colors.white),
                   label: const Text('Compartir Excel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ReportColors.primary,

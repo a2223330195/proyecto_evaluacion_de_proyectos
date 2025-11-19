@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:coachhub/models/report_models.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:excel/excel.dart' as excel;
 
@@ -1711,11 +1712,79 @@ class ExportService {
     }
   }
 
+  Future<Directory> _getProjectRootDir() async {
+    final candidates = <Directory>[];
+
+    try {
+      final current = Directory.current;
+      candidates.add(current);
+      candidates.add(current.parent);
+    } catch (_) {}
+
+    try {
+      final executableDir = Directory(path.dirname(Platform.resolvedExecutable));
+      candidates.add(executableDir);
+      candidates.add(executableDir.parent);
+      candidates.add(executableDir.parent.parent);
+    } catch (_) {}
+
+    final appDocDir = await getApplicationDocumentsDirectory();
+    candidates.add(appDocDir);
+
+    for (final dir in candidates) {
+      if (dir.path.isEmpty) continue;
+      final assetsDir = Directory(path.join(dir.path, 'assets'));
+      if (await assetsDir.exists()) {
+        return dir;
+      }
+    }
+
+    return appDocDir;
+  }
+
+  Future<Directory> _resolveReportDirectory(String subDir) async {
+    final normalizedSubDir = subDir;
+
+    try {
+      final rootDir = await _getProjectRootDir();
+      final reportDir = Directory(path.join(rootDir.path, normalizedSubDir));
+
+      if (!await reportDir.exists()) {
+        await reportDir.create(recursive: true);
+      }
+
+      return reportDir;
+    } catch (_) {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final fallbackSubDir = normalizedSubDir.replaceFirst('assets/', '');
+      final fallbackDir = Directory(path.join(appDocDir.path, fallbackSubDir));
+
+      if (!await fallbackDir.exists()) {
+        await fallbackDir.create(recursive: true);
+      }
+
+      return fallbackDir;
+    }
+  }
+
   Future<String> _savePdf(String filename, List<int> bytes) async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      // Determinar subdirectorio según el tipo de reporte
+      String subDir = 'assets/reportes';
+      if (filename.contains('pagos')) {
+        subDir = 'assets/reportes/reportes_pagos';
+      } else if (filename.contains('rutinas')) {
+        subDir = 'assets/reportes/reportes_rutinas';
+      } else if (filename.contains('metricas')) {
+        subDir = 'assets/reportes/reportes_metricas';
+      } else if (filename.contains('bitacora')) {
+        subDir = 'assets/reportes/reportes_bitacora';
+      }
+
+      final reportDir = await _resolveReportDirectory(subDir);
+
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${dir.path}/${filename}_$timestamp.pdf');
+      final file = File(path.join(reportDir.path, '${filename}_$timestamp.pdf'));
       await file.writeAsBytes(bytes, flush: true);
       return file.path;
     } catch (e) {
@@ -1726,9 +1795,22 @@ class ExportService {
 
   Future<String> _saveExcel(String filename, List<int> bytes) async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      // Determinar subdirectorio según el tipo de reporte
+      String subDir = 'assets/reportes';
+      if (filename.contains('pagos')) {
+        subDir = 'assets/reportes/reportes_pagos';
+      } else if (filename.contains('rutinas')) {
+        subDir = 'assets/reportes/reportes_rutinas';
+      } else if (filename.contains('metricas')) {
+        subDir = 'assets/reportes/reportes_metricas';
+      } else if (filename.contains('bitacora')) {
+        subDir = 'assets/reportes/reportes_bitacora';
+      }
+
+      final reportDir = await _resolveReportDirectory(subDir);
+
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${dir.path}/${filename}_$timestamp.xlsx');
+      final file = File(path.join(reportDir.path, '${filename}_$timestamp.xlsx'));
       await file.writeAsBytes(bytes, flush: true);
       return file.path;
     } catch (e) {

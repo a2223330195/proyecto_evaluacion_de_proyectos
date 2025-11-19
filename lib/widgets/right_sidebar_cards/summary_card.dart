@@ -45,6 +45,11 @@ class _SummaryCardState extends State<SummaryCard> {
       _cache[0] = widget.summary;
       if (_weekOffset == 0) {
         _displaySummary = widget.summary;
+      } else {
+        // Si hubo una actualización global y estamos viendo otra semana,
+        // recargamos esa semana para asegurar consistencia (ej. cambios en sesiones)
+        _cache.remove(_weekOffset);
+        _loadSummaryForOffset(_weekOffset);
       }
     }
   }
@@ -52,9 +57,14 @@ class _SummaryCardState extends State<SummaryCard> {
   Future<void> _changeWeek(int delta) async {
     final newOffset = _weekOffset + delta;
     setState(() => _weekOffset = newOffset);
+    await _loadSummaryForOffset(newOffset);
+  }
 
-    if (_cache.containsKey(newOffset)) {
-      setState(() => _displaySummary = _cache[newOffset]!);
+  Future<void> _loadSummaryForOffset(int offset) async {
+    if (_cache.containsKey(offset)) {
+      if (mounted) {
+        setState(() => _displaySummary = _cache[offset]!);
+      }
       return;
     }
 
@@ -63,14 +73,14 @@ class _SummaryCardState extends State<SummaryCard> {
       final summary = await _dashboardService
           .getWeeklySummary(
             coachId: widget.coachId,
-            weekOffset: newOffset,
+            weekOffset: offset,
             asesoradosActivos: widget.summary.asesoradosActivos,
           )
           .timeout(const Duration(seconds: 10));
 
       if (!mounted) return;
       setState(() {
-        _cache[newOffset] = summary;
+        _cache[offset] = summary;
         _displaySummary = summary;
       });
     } catch (_) {
@@ -80,6 +90,7 @@ class _SummaryCardState extends State<SummaryCard> {
           content: Text('No se pudo cargar el resumen de esa semana.'),
         ),
       );
+      // Si falla, volvemos a la semana 0 que siempre debería estar disponible
       setState(() {
         _weekOffset = 0;
         _displaySummary = _cache[0]!;

@@ -16,3 +16,8 @@ class LogoutEvent extends AuthEvent {
 class CheckAuthStatusEvent extends AuthEvent {
   const CheckAuthStatusEvent();
 }
+
+class UpdateCoachProfileEvent extends AuthEvent {
+  final Coach coach;
+  const UpdateCoachProfileEvent(this.coach);
+}

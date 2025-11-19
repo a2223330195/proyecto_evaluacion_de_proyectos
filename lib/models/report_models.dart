@@ -44,12 +44,14 @@ class PaymentReportData extends Equatable {
 class DebtorDetail extends Equatable {
   final int asesoradoId;
   final String asesoradoName;
+  final String? avatarUrl;
   final double debtAmount;
   final DateTime lastPaymentDate;
 
   const DebtorDetail({
     required this.asesoradoId,
     required this.asesoradoName,
+    this.avatarUrl,
     required this.debtAmount,
     required this.lastPaymentDate,
   });
@@ -58,6 +60,7 @@ class DebtorDetail extends Equatable {
   List<Object?> get props => [
     asesoradoId,
     asesoradoName,
+    avatarUrl,
     debtAmount,
     lastPaymentDate,
   ];
@@ -66,6 +69,7 @@ class DebtorDetail extends Equatable {
 class PaymentDetail extends Equatable {
   final int id;
   final String asesoradoName;
+  final String? avatarUrl;
   final DateTime paymentDate;
   final double amount;
   final String type;
@@ -74,6 +78,7 @@ class PaymentDetail extends Equatable {
   const PaymentDetail({
     required this.id,
     required this.asesoradoName,
+    this.avatarUrl,
     required this.paymentDate,
     required this.amount,
     required this.type,
@@ -84,6 +89,7 @@ class PaymentDetail extends Equatable {
   List<Object?> get props => [
     id,
     asesoradoName,
+    avatarUrl,
     paymentDate,
     amount,
     type,
@@ -140,6 +146,7 @@ class RoutineUsage extends Equatable {
 
 class RoutineProgress extends Equatable {
   final String asesoradoName;
+  final String? avatarUrl;
   final String routineName;
   final int seriesCompleted;
   final int seriesAssigned;
@@ -147,6 +154,7 @@ class RoutineProgress extends Equatable {
 
   const RoutineProgress({
     required this.asesoradoName,
+    this.avatarUrl,
     required this.routineName,
     required this.seriesCompleted,
     required this.seriesAssigned,
@@ -156,6 +164,7 @@ class RoutineProgress extends Equatable {
   @override
   List<Object?> get props => [
     asesoradoName,
+    avatarUrl,
     routineName,
     seriesCompleted,
     seriesAssigned,
@@ -184,6 +193,7 @@ class MetricsReportData extends Equatable {
 
 class MetricsEvolution extends Equatable {
   final String asesoradoName;
+  final String? avatarUrl;
   final DateTime measurementDate;
   final double? weight;
   final double? fatPercentage;
@@ -192,6 +202,7 @@ class MetricsEvolution extends Equatable {
 
   const MetricsEvolution({
     required this.asesoradoName,
+    this.avatarUrl,
     required this.measurementDate,
     this.weight,
     this.fatPercentage,
@@ -202,6 +213,7 @@ class MetricsEvolution extends Equatable {
   @override
   List<Object?> get props => [
     asesoradoName,
+    avatarUrl,
     measurementDate,
     weight,
     fatPercentage,
@@ -212,6 +224,7 @@ class MetricsEvolution extends Equatable {
 
 class MetricsSummary extends Equatable {
   final String asesoradoName;
+  final String? avatarUrl;
   final double? initialWeight;
   final double? currentWeight;
   final double? weightChange;
@@ -219,9 +232,12 @@ class MetricsSummary extends Equatable {
   final double? currentFat;
   final double? fatChange;
   final int measurementCount;
+  final String? objetivoPrincipal;
+  final String? objetivoSecundario;
 
   const MetricsSummary({
     required this.asesoradoName,
+    this.avatarUrl,
     this.initialWeight,
     this.currentWeight,
     this.weightChange,
@@ -229,11 +245,14 @@ class MetricsSummary extends Equatable {
     this.currentFat,
     this.fatChange,
     required this.measurementCount,
+    this.objetivoPrincipal,
+    this.objetivoSecundario,
   });
 
   @override
   List<Object?> get props => [
     asesoradoName,
+    avatarUrl,
     initialWeight,
     currentWeight,
     weightChange,
@@ -241,11 +260,14 @@ class MetricsSummary extends Equatable {
     currentFat,
     fatChange,
     measurementCount,
+    objetivoPrincipal,
+    objetivoSecundario,
   ];
 }
 
 class MetricsChange extends Equatable {
   final String asesoradoName;
+  final String? avatarUrl;
   final String metric;
   final double change;
   final double changePercentage;
@@ -254,6 +276,7 @@ class MetricsChange extends Equatable {
 
   const MetricsChange({
     required this.asesoradoName,
+    this.avatarUrl,
     required this.metric,
     required this.change,
     required this.changePercentage,
@@ -264,6 +287,7 @@ class MetricsChange extends Equatable {
   @override
   List<Object?> get props => [
     asesoradoName,
+    avatarUrl,
     metric,
     change,
     changePercentage,
@@ -300,6 +324,7 @@ class BitacoraReportData extends Equatable {
 class NoteEntry extends Equatable {
   final int id;
   final String asesoradoName;
+  final String? avatarUrl;
   final String content;
   final DateTime createdAt;
   final bool isPriority;
@@ -307,6 +332,7 @@ class NoteEntry extends Equatable {
   const NoteEntry({
     required this.id,
     required this.asesoradoName,
+    this.avatarUrl,
     required this.content,
     required this.createdAt,
     required this.isPriority,
@@ -316,6 +342,7 @@ class NoteEntry extends Equatable {
   List<Object?> get props => [
     id,
     asesoradoName,
+    avatarUrl,
     content,
     createdAt,
     isPriority,
@@ -324,6 +351,7 @@ class NoteEntry extends Equatable {
 
 class ObjectiveTracking extends Equatable {
   final String asesoradoName;
+  final String? avatarUrl;
   final String objective;
   final int notesCount;
   final DateTime firstNote;
@@ -331,6 +359,7 @@ class ObjectiveTracking extends Equatable {
 
   const ObjectiveTracking({
     required this.asesoradoName,
+    this.avatarUrl,
     required this.objective,
     required this.notesCount,
     required this.firstNote,
@@ -340,6 +369,7 @@ class ObjectiveTracking extends Equatable {
   @override
   List<Object?> get props => [
     asesoradoName,
+    avatarUrl,
     objective,
     notesCount,
     firstNote,

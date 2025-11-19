@@ -11,6 +11,7 @@ import 'package:coachhub/blocs/bitacora/bitacora_state.dart';
 import 'package:coachhub/blocs/bitacora/bitacora_event.dart';
 import 'package:coachhub/blocs/auth/auth_bloc.dart';
 import 'package:coachhub/blocs/auth/auth_event.dart';
+import 'package:coachhub/blocs/auth/auth_state.dart';
 import 'package:coachhub/models/coach_model.dart';
 import 'package:coachhub/utils/app_styles.dart';
 import 'package:coachhub/widgets/content_cards/agenda_card.dart';
@@ -40,6 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late final PagosBloc _pagosBloc;
   late final PagosPendientesBloc _pagosPendientesBloc;
   late final BitacoraBloc _bitacoraBloc;
+  late Coach _coach;
   bool _isSidebarCollapsed = false;
   int _pagosPendientes = 0;
   bool _pagosPendientesUpdating = false;
@@ -47,16 +49,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _coach = widget.coach;
     _dashboardBloc =
         DashboardBloc(authBloc: context.read<AuthBloc>())
-          ..add(PreloadImages(widget.coach.profilePictureUrl ?? ''))
-          ..add(LoadDashboard(widget.coach.id));
+          ..add(PreloadImages(_coach.profilePictureUrl ?? ''))
+          ..add(LoadDashboard(_coach.id));
     _pagosBloc = PagosBloc();
     _pagosPendientesBloc =
-        PagosPendientesBloc()..add(CargarPagosPendientes(widget.coach.id));
+        PagosPendientesBloc()..add(CargarPagosPendientes(_coach.id));
     _pagosPendientesUpdating = true;
     _bitacoraBloc =
-        BitacoraBloc()..add(CargarNotasPrioritariasDashboard(widget.coach.id));
+        BitacoraBloc()..add(CargarNotasPrioritariasDashboard(_coach.id));
   }
 
   @override
@@ -133,6 +136,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
             value: _bitacoraBloc,
             child: MultiBlocListener(
               listeners: [
+                BlocListener<AuthBloc, AuthState>(
+                  listener: (context, authState) {
+                    if (!mounted) return;
+                    if (authState is AuthenticationSuccess &&
+                        authState.coach.id == _coach.id) {
+                      setState(() {
+                        _coach = authState.coach;
+                      });
+                      _dashboardBloc.add(
+                        PreloadImages(authState.coach.profilePictureUrl ?? ''),
+                      );
+                    }
+                  },
+                ),
                 BlocListener<PagosBloc, PagosState>(
                   bloc: _pagosBloc,
                   listener: (context, state) {
@@ -153,7 +170,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     // 🎯 Recargar pagos pendientes cuando se registra abono/pago
                     if (state is AbonoRegistrado || state is PagoCompletado) {
                       _pagosPendientesBloc.add(
-                        CargarPagosPendientes(widget.coach.id),
+                        CargarPagosPendientes(_coach.id),
                       );
                     }
                   },
@@ -211,7 +228,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 body: Column(
                   children: [
                     TopHeader(
-                      coach: widget.coach,
+                      coach: _coach,
                       onMenuPressed: _toggleSidebar,
                       onLogoutRequested: _handleLogout,
                     ),
@@ -230,7 +247,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               message: state.message,
                               onRetry:
                                   () => _dashboardBloc.add(
-                                    LoadDashboard(widget.coach.id),
+                                    LoadDashboard(_coach.id),
                                   ),
                             );
                           }
@@ -251,7 +268,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     duration: const Duration(milliseconds: 200),
                                     width: _isSidebarCollapsed ? 72 : 240,
                                     child: LeftSidebar(
-                                      coach: widget.coach,
+                                      coach: _coach,
                                       collapsed: _isSidebarCollapsed,
                                       onLogout: _handleLogout,
                                     ),
@@ -269,7 +286,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               SliverToBoxAdapter(
                                                 child: AgendaCard(
                                                   agendaHoy: data.agendaHoy,
-                                                  coachId: widget.coach.id,
+                                                  coachId: _coach.id,
                                                 ),
                                               ),
                                               const SliverToBoxAdapter(
@@ -285,8 +302,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                       context,
                                                     ).pushNamed(
                                                       '/pagos-pendientes',
-                                                      arguments:
-                                                          widget.coach.id,
+                                                      arguments: _coach.id,
                                                     );
                                                   },
                                                 ),
@@ -324,7 +340,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   summary: data.resumenSemanal,
                                                   isRefreshing:
                                                       state.isRefreshing,
-                                                  coachId: widget.coach.id,
+                                                  coachId: _coach.id,
                                                 ),
                                               ),
                                               const SliverToBoxAdapter(

@@ -8,6 +8,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<LoginEvent>(_onLogin);
     on<LogoutEvent>(_onLogout);
     on<CheckAuthStatusEvent>(_onCheckAuthStatus);
+    on<UpdateCoachProfileEvent>(_onUpdateCoachProfile);
   }
 
   Future<void> _onLogin(LoginEvent event, Emitter<AuthState> emit) async {
@@ -33,6 +34,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthenticationSuccess(successState.coach));
     } else {
       emit(const AuthInitial());
+    }
+  }
+
+  Future<void> _onUpdateCoachProfile(
+    UpdateCoachProfileEvent event,
+    Emitter<AuthState> emit,
+  ) async {
+    if (state is AuthenticationSuccess) {
+      emit(AuthenticationSuccess(event.coach));
     }
   }
 

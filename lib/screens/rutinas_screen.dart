@@ -440,6 +440,17 @@ class RutinasScreenState extends State<RutinasScreen> {
   }
 
   Widget _buildRutinaCard(Rutina rutina) {
+    final safeDescripcion = rutina.descripcion?.trim() ?? '';
+    const maxDescripcionChars = 110;
+    final bool hasDescripcion = safeDescripcion.isNotEmpty;
+    final descripcionLength = safeDescripcion.length;
+    final bool needsSeeMore = hasDescripcion && descripcionLength > maxDescripcionChars;
+    final String descripcionPreview = !hasDescripcion
+      ? ''
+      : needsSeeMore
+        ? '${safeDescripcion.substring(0, maxDescripcionChars).trim()}…'
+        : safeDescripcion;
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -456,19 +467,43 @@ class RutinasScreenState extends State<RutinasScreen> {
               const SizedBox(height: 8),
 
               // 🎯 TAREA 2.3: Solo nombre (sin descripción para espacio compacto)
-              Expanded(
-                child: Text(
-                  rutina.nombre,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
+              Text(
+                rutina.nombre,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
 
-              const SizedBox(height: 8),
+              if (hasDescripcion) ...[
+                const SizedBox(height: 6),
+                Text(
+                  descripcionPreview,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                if (needsSeeMore)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 0),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => _showQuickViewDialog(rutina),
+                      child: const Text('Ver más'),
+                    ),
+                  ),
+              ],
+
+              const Spacer(),
 
               // 🎯 TAREA 2.3: Botones iconográficos compactos (Ver eliminado)
               Row(
