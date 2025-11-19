@@ -14,7 +14,8 @@ import 'image_compression_service.dart';
 /// - Eliminar imágenes antiguas
 /// - Proporcionar rutas relativas para base de datos
 class ImageService {
-  static const String _profilePicturesDir = 'assets/asesorados_profile_pictures';
+  static const String _profilePicturesDir =
+      'assets/asesorados_profile_pictures';
   static const String _coachProfileDir = 'assets/coaches_profile_pictures';
   static final ImagePicker _imagePicker = ImagePicker();
 
@@ -34,7 +35,9 @@ class ImageService {
     } catch (_) {}
 
     try {
-      final executableDir = Directory(path.dirname(Platform.resolvedExecutable));
+      final executableDir = Directory(
+        path.dirname(Platform.resolvedExecutable),
+      );
       candidates.add(executableDir);
       candidates.add(executableDir.parent);
       candidates.add(executableDir.parent.parent);
@@ -118,9 +121,10 @@ class ImageService {
     }
 
     final appDocDir = await _getAppDocumentsDir();
-    final fallbackPath = storagePath.startsWith('assets/')
-        ? storagePath.replaceFirst('assets/', '')
-        : storagePath;
+    final fallbackPath =
+        storagePath.startsWith('assets/')
+            ? storagePath.replaceFirst('assets/', '')
+            : storagePath;
     return path.normalize(path.join(appDocDir.path, fallbackPath));
   }
 
@@ -131,7 +135,10 @@ class ImageService {
 
     if (path.isWithin(normalizedRoot, normalizedAbsolute) ||
         normalizedAbsolute.startsWith(normalizedRoot)) {
-      final relativePath = path.relative(normalizedAbsolute, from: normalizedRoot);
+      final relativePath = path.relative(
+        normalizedAbsolute,
+        from: normalizedRoot,
+      );
       return relativePath.replaceAll('\\', '/');
     }
 

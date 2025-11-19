@@ -103,75 +103,76 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
-                  onPressed: isChecking
-                      ? null
-                      : () async {
-                          if (!formKey.currentState!.validate()) return;
+                  onPressed:
+                      isChecking
+                          ? null
+                          : () async {
+                            if (!formKey.currentState!.validate()) return;
 
-                          setState(() => isChecking = true);
-                          final db = DatabaseConnection.instance;
+                            setState(() => isChecking = true);
+                            final db = DatabaseConnection.instance;
 
-                          try {
-                            if (!emailFound) {
-                              // Paso 1: Verificar email
-                              final email = emailController.text
-                                  .toLowerCase()
-                                  .replaceAll("'", "''");
-                              final results = await db.query(
-                                "SELECT id FROM coaches WHERE LOWER(email) = '$email'",
-                              );
+                            try {
+                              if (!emailFound) {
+                                // Paso 1: Verificar email
+                                final email = emailController.text
+                                    .toLowerCase()
+                                    .replaceAll("'", "''");
+                                final results = await db.query(
+                                  "SELECT id FROM coaches WHERE LOWER(email) = '$email'",
+                                );
 
-                              if (results.isNotEmpty) {
-                                setState(() {
-                                  emailFound = true;
-                                  isChecking = false;
-                                });
+                                if (results.isNotEmpty) {
+                                  setState(() {
+                                    emailFound = true;
+                                    isChecking = false;
+                                  });
+                                } else {
+                                  setState(() => isChecking = false);
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Correo no encontrado'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
                               } else {
-                                setState(() => isChecking = false);
+                                // Paso 2: Actualizar contraseña
+                                final email = emailController.text
+                                    .toLowerCase()
+                                    .replaceAll("'", "''");
+                                final newHash = BCrypt.hashpw(
+                                  passwordController.text,
+                                  BCrypt.gensalt(),
+                                );
+
+                                await db.query(
+                                  "UPDATE coaches SET password_hash = '$newHash' WHERE LOWER(email) = '$email'",
+                                );
+
                                 if (!context.mounted) return;
+                                Navigator.pop(context);
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Correo no encontrado'),
-                                    backgroundColor: Colors.red,
+                                    content: Text(
+                                      'Contraseña actualizada exitosamente',
+                                    ),
+                                    backgroundColor: Colors.green,
                                   ),
                                 );
                               }
-                            } else {
-                              // Paso 2: Actualizar contraseña
-                              final email = emailController.text
-                                  .toLowerCase()
-                                  .replaceAll("'", "''");
-                              final newHash = BCrypt.hashpw(
-                                passwordController.text,
-                                BCrypt.gensalt(),
-                              );
-
-                              await db.query(
-                                "UPDATE coaches SET password_hash = '$newHash' WHERE LOWER(email) = '$email'",
-                              );
-
+                            } catch (e) {
+                              setState(() => isChecking = false);
                               if (!context.mounted) return;
-                              Navigator.pop(context);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Contraseña actualizada exitosamente',
-                                  ),
-                                  backgroundColor: Colors.green,
+                                SnackBar(
+                                  content: Text('Error: $e'),
+                                  backgroundColor: Colors.red,
                                 ),
                               );
                             }
-                          } catch (e) {
-                            setState(() => isChecking = false);
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        },
+                          },
                   child: Text(emailFound ? 'Actualizar' : 'Buscar'),
                 ),
               ],

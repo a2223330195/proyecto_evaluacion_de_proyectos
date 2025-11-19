@@ -259,16 +259,20 @@ class RoutineReportScreen extends StatelessWidget {
     return BlocBuilder<ReportsBloc, ReportsState>(
       builder: (context, state) {
         // Verificar si está cargando para este reporte específico
-        final isExportingPdf = state is ExportInProgress &&
+        final isExportingPdf =
+            state is ExportInProgress &&
             state.reportType == 'rutinas' &&
             state.format == 'pdf';
-        final isExportingExcel = state is ExportInProgress &&
+        final isExportingExcel =
+            state is ExportInProgress &&
             state.reportType == 'rutinas' &&
             state.format == 'excel';
-        final isSharingPdf = state is ShareInProgress &&
+        final isSharingPdf =
+            state is ShareInProgress &&
             state.reportType == 'rutinas' &&
             state.format == 'pdf';
-        final isSharingExcel = state is ShareInProgress &&
+        final isSharingExcel =
+            state is ShareInProgress &&
             state.reportType == 'rutinas' &&
             state.format == 'excel';
 
@@ -294,7 +298,10 @@ class RoutineReportScreen extends StatelessWidget {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.picture_as_pdf, color: Colors.white),
+                          : const Icon(
+                            Icons.picture_as_pdf,
+                            color: Colors.white,
+                          ),
                   label: const Text('Exportar PDF'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,

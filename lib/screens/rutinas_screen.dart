@@ -444,12 +444,14 @@ class RutinasScreenState extends State<RutinasScreen> {
     const maxDescripcionChars = 110;
     final bool hasDescripcion = safeDescripcion.isNotEmpty;
     final descripcionLength = safeDescripcion.length;
-    final bool needsSeeMore = hasDescripcion && descripcionLength > maxDescripcionChars;
-    final String descripcionPreview = !hasDescripcion
-      ? ''
-      : needsSeeMore
-        ? '${safeDescripcion.substring(0, maxDescripcionChars).trim()}…'
-        : safeDescripcion;
+    final bool needsSeeMore =
+        hasDescripcion && descripcionLength > maxDescripcionChars;
+    final String descripcionPreview =
+        !hasDescripcion
+            ? ''
+            : needsSeeMore
+            ? '${safeDescripcion.substring(0, maxDescripcionChars).trim()}…'
+            : safeDescripcion;
 
     return Card(
       elevation: 2,
@@ -483,10 +485,7 @@ class RutinasScreenState extends State<RutinasScreen> {
                   descripcionPreview,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade700,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
                 if (needsSeeMore)
                   Align(

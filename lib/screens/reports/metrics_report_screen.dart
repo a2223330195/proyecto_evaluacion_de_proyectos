@@ -22,11 +22,16 @@ class MetricsReportScreen extends StatelessWidget {
       return ReportColors.neutral;
     }
 
-    final targets = '${objetivoPrincipal ?? ''} ${objetivoSecundario ?? ''}'.toLowerCase();
+    final targets =
+        '${objetivoPrincipal ?? ''} ${objetivoSecundario ?? ''}'.toLowerCase();
     final wantsToLose =
-        targets.contains('bajar') || targets.contains('disminuir') || targets.contains('reducir');
+        targets.contains('bajar') ||
+        targets.contains('disminuir') ||
+        targets.contains('reducir');
     final wantsToGain =
-        targets.contains('subir') || targets.contains('aumentar') || targets.contains('ganar');
+        targets.contains('subir') ||
+        targets.contains('aumentar') ||
+        targets.contains('ganar');
 
     final lostWeight = weightChange < 0;
     final gainedWeight = weightChange > 0;
@@ -258,16 +263,20 @@ class MetricsReportScreen extends StatelessWidget {
     return BlocBuilder<ReportsBloc, ReportsState>(
       builder: (context, state) {
         // Verificar si está cargando para este reporte específico
-        final isExportingPdf = state is ExportInProgress &&
+        final isExportingPdf =
+            state is ExportInProgress &&
             state.reportType == 'metricas' &&
             state.format == 'pdf';
-        final isExportingExcel = state is ExportInProgress &&
+        final isExportingExcel =
+            state is ExportInProgress &&
             state.reportType == 'metricas' &&
             state.format == 'excel';
-        final isSharingPdf = state is ShareInProgress &&
+        final isSharingPdf =
+            state is ShareInProgress &&
             state.reportType == 'metricas' &&
             state.format == 'pdf';
-        final isSharingExcel = state is ShareInProgress &&
+        final isSharingExcel =
+            state is ShareInProgress &&
             state.reportType == 'metricas' &&
             state.format == 'excel';
 
@@ -293,7 +302,10 @@ class MetricsReportScreen extends StatelessWidget {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.picture_as_pdf, color: Colors.white),
+                          : const Icon(
+                            Icons.picture_as_pdf,
+                            color: Colors.white,
+                          ),
                   label: const Text('Exportar PDF'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,

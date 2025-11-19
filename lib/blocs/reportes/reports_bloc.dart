@@ -229,7 +229,12 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
       return;
     }
 
-    await _handleExport(type: type, format: 'pdf', emit: emit, reportType: event.reportType);
+    await _handleExport(
+      type: type,
+      format: 'pdf',
+      emit: emit,
+      reportType: event.reportType,
+    );
   }
 
   Future<void> _onExportReportToExcel(
@@ -242,7 +247,12 @@ class ReportsBloc extends Bloc<ReportsEvent, ReportsState> {
       return;
     }
 
-    await _handleExport(type: type, format: 'excel', emit: emit, reportType: event.reportType);
+    await _handleExport(
+      type: type,
+      format: 'excel',
+      emit: emit,
+      reportType: event.reportType,
+    );
   }
 
   Future<void> _onShareReport(

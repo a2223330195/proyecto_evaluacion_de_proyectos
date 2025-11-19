@@ -426,7 +426,11 @@ class _TopHeaderState extends State<TopHeader> {
                             const SizedBox(height: 8),
                             const Row(
                               children: [
-                                Icon(Icons.edit, size: 14, color: AppColors.primary),
+                                Icon(
+                                  Icons.edit,
+                                  size: 14,
+                                  color: AppColors.primary,
+                                ),
                                 SizedBox(width: 4),
                                 Text(
                                   'Editar Perfil',

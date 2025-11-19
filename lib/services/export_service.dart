@@ -1722,7 +1722,9 @@ class ExportService {
     } catch (_) {}
 
     try {
-      final executableDir = Directory(path.dirname(Platform.resolvedExecutable));
+      final executableDir = Directory(
+        path.dirname(Platform.resolvedExecutable),
+      );
       candidates.add(executableDir);
       candidates.add(executableDir.parent);
       candidates.add(executableDir.parent.parent);
@@ -1784,7 +1786,9 @@ class ExportService {
       final reportDir = await _resolveReportDirectory(subDir);
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File(path.join(reportDir.path, '${filename}_$timestamp.pdf'));
+      final file = File(
+        path.join(reportDir.path, '${filename}_$timestamp.pdf'),
+      );
       await file.writeAsBytes(bytes, flush: true);
       return file.path;
     } catch (e) {
@@ -1810,7 +1814,9 @@ class ExportService {
       final reportDir = await _resolveReportDirectory(subDir);
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File(path.join(reportDir.path, '${filename}_$timestamp.xlsx'));
+      final file = File(
+        path.join(reportDir.path, '${filename}_$timestamp.xlsx'),
+      );
       await file.writeAsBytes(bytes, flush: true);
       return file.path;
     } catch (e) {

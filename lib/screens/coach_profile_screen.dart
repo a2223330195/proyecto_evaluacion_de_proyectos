@@ -103,7 +103,7 @@ class _CoachProfileScreenState extends State<CoachProfileScreen> {
       // 3. Actualizar base de datos
       final nombre = _nameController.text.replaceAll("'", "''");
       final email = _emailController.text.replaceAll("'", "''");
-      
+
       final updateQuery = StringBuffer("UPDATE coaches SET ");
       updateQuery.write("nombre = '$nombre', ");
       updateQuery.write("email = '$email'");
@@ -256,8 +256,7 @@ class _CoachProfileScreenState extends State<CoachProfileScreen> {
           child: CircleAvatar(
             radius: 60,
             backgroundColor: Colors.grey[200],
-            backgroundImage:
-                _imageFile != null ? FileImage(_imageFile!) : null,
+            backgroundImage: _imageFile != null ? FileImage(_imageFile!) : null,
             child:
                 _imageFile == null
                     ? const Icon(Icons.person, size: 60, color: Colors.grey)

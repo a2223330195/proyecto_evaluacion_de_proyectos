@@ -784,8 +784,14 @@ class ReportsService {
             fatChange: fatChange,
             measurementCount:
                 int.tryParse(r.fields['measurement_count'].toString()) ?? 0,
-            objetivoPrincipal: objetivoPrincipal?.isNotEmpty == true ? objetivoPrincipal : null,
-            objetivoSecundario: objetivoSecundario?.isNotEmpty == true ? objetivoSecundario : null,
+            objetivoPrincipal:
+                objetivoPrincipal?.isNotEmpty == true
+                    ? objetivoPrincipal
+                    : null,
+            objetivoSecundario:
+                objetivoSecundario?.isNotEmpty == true
+                    ? objetivoSecundario
+                    : null,
           ),
         );
       }
