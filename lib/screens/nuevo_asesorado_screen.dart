@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/asesorado_model.dart';
 import '../models/plan_model.dart';
+import '../utils/string_formatters.dart';
 
 class NuevoAsesoradoScreen extends StatefulWidget {
   final Asesorado? asesorado; // Optional parameter for editing
@@ -575,7 +576,12 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
                 ),
                 items:
                     _sexoOptions
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(formatUserFacingLabel(s)),
+                          ),
+                        )
                         .toList(),
                 onChanged: (v) => setState(() => _selectedSexo = v),
                 validator: (value) {
@@ -913,7 +919,7 @@ class NuevoAsesoradoScreenState extends State<NuevoAsesoradoScreen>
           AsesoradoStatus.values.map((AsesoradoStatus status) {
             return DropdownMenuItem<AsesoradoStatus>(
               value: status,
-              child: Text(status.toString().split('.').last),
+              child: Text(status.displayLabel),
             );
           }).toList(),
       onChanged: (AsesoradoStatus? newValue) {

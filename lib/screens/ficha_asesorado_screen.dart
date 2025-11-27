@@ -17,6 +17,7 @@ import 'package:coachhub/widgets/optimized_cached_image.dart';
 import 'package:coachhub/models/asesorado_model.dart';
 import 'package:intl/intl.dart';
 import '../utils/app_colors.dart';
+import '../utils/string_formatters.dart';
 import 'planes_nutricionales_screen.dart';
 import 'metricas_detalle_screen.dart';
 import 'nuevo_asesorado_screen.dart';
@@ -367,7 +368,12 @@ class _FichaAsesoradoScreenState extends State<FichaAsesoradoScreen>
                     'Fecha de Nacimiento',
                     DateFormat('dd/MM/yyyy').format(asesorado.fechaNacimiento!),
                   ),
-                _buildInfoRow('Sexo', asesorado.sexo ?? 'N/A'),
+                _buildInfoRow(
+                  'Sexo',
+                  asesorado.sexo?.trim().isNotEmpty == true
+                      ? formatUserFacingLabel(asesorado.sexo!)
+                      : 'N/A',
+                ),
                 _buildInfoRow('Altura', altura),
                 _buildInfoRow('Teléfono', telefono),
               ],

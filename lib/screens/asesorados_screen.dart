@@ -29,10 +29,13 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
   final TextEditingController _searchController = TextEditingController();
   AsesoradoStatus? _selectedStatus;
   final ScrollController _scrollController = ScrollController(); // 🛡️ MÓDULO 5
+  late final AsesoradosBloc _asesoradosBloc;
 
   @override
   void initState() {
     super.initState();
+    _asesoradosBloc =
+        AsesoradosBloc()..add(LoadAsesorados(1, widget.coachId, '', null));
     // 🛡️ MÓDULO 5: Agregar listener para infinite scroll
     _scrollController.addListener(_onScroll);
   }
@@ -41,6 +44,7 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose(); // 🛡️ MÓDULO 5
+    _asesoradosBloc.close();
     super.dispose();
   }
 
@@ -48,21 +52,18 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >
         _scrollController.position.maxScrollExtent * 0.8) {
-      final state = context.read<AsesoradosBloc>().state;
+      final state = _asesoradosBloc.state;
       if (state is AsesoradosLoaded && state.hasMore && !state.isLoading) {
         // Trigger load more
-        context.read<AsesoradosBloc>().add(const LoadMoreAsesorados());
+        _asesoradosBloc.add(const LoadMoreAsesorados());
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create:
-          (context) =>
-              AsesoradosBloc()
-                ..add(LoadAsesorados(1, widget.coachId, '', null)),
+    return BlocProvider.value(
+      value: _asesoradosBloc,
       child: Builder(
         builder: (builderContext) => _buildScaffold(builderContext),
       ),
@@ -775,14 +776,7 @@ class _AsesoradosScreenState extends State<AsesoradosScreen> {
   }
 
   static String _statusLabel(AsesoradoStatus status) {
-    switch (status) {
-      case AsesoradoStatus.activo:
-        return 'Activo';
-      case AsesoradoStatus.enPausa:
-        return 'En pausa';
-      case AsesoradoStatus.deudor:
-        return 'Deudor';
-    }
+    return status.displayLabel;
   }
 }
 

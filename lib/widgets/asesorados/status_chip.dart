@@ -11,25 +11,22 @@ class StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     Color backgroundColor;
     Color textColor;
-    String text;
 
     switch (status) {
       case AsesoradoStatus.activo:
         backgroundColor = AppColors.success.withAlpha((255 * 0.1).round());
         textColor = AppColors.success;
-        text = 'Activo';
         break;
       case AsesoradoStatus.enPausa:
         backgroundColor = AppColors.yellow.withAlpha((255 * 0.1).round());
         textColor = AppColors.yellow;
-        text = 'En Pausa';
         break;
       case AsesoradoStatus.deudor:
         backgroundColor = AppColors.warning.withAlpha((255 * 0.1).round());
         textColor = AppColors.warning;
-        text = 'Deudor';
         break;
     }
+    final text = status.displayLabel;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -39,10 +36,7 @@ class StatusChip extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(
-          color: textColor,
-          fontWeight: FontWeight.bold,
-        ),
+        style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
       ),
     );
   }

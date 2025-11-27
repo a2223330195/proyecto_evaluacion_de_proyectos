@@ -1,6 +1,12 @@
 // lib/models/asesorado_model.dart
 
+import '../utils/string_formatters.dart';
+
 enum AsesoradoStatus { activo, enPausa, deudor }
+
+extension AsesoradoStatusView on AsesoradoStatus {
+  String get displayLabel => formatUserFacingLabel(name);
+}
 
 class Asesorado {
   final int id;
